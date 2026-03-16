@@ -1,0 +1,50 @@
+{
+  "name": "senel-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node src/server.js",
+    "start": "node src/server.js",
+    "create-indexes": "node src/scripts/createSearchIndexes.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google-cloud/translate": "^9.3.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "csv-parser": "^3.2.0",
+    "csv-writer": "^1.6.0",
+    "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.10.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "jsonwebtoken": "^9.0.3",
+    "meilisearch": "^0.55.0",
+    "mongoose": "^9.3.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.1.1",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.1",
+    "pdfkit": "^0.17.2",
+    "stripe": "^20.4.1",
+    "zod": "^3.22.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/muhammadusama985/senel-backend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/muhammadusama985/senel-backend/issues"
+  },
+  "homepage": "https://github.com/muhammadusama985/senel-backend#readme",
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
