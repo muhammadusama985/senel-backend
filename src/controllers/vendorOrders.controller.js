@@ -20,11 +20,37 @@ async function getMyVendor(req) {
 async function vendorListOrders(req, res) {
   const vendor = await getMyVendor(req);
 
-  const { status, handoverStatus, page = 1, limit = 20 } = req.query;
+  const { status, handoverStatus, q, from, to, page = 1, limit = 20 } = req.query;
   const query = { vendorId: vendor._id };
 
   if (status) query.status = status;
   if (handoverStatus) query.handoverStatus = handoverStatus;
+  if (q) {
+    const term = String(q).trim();
+    if (term) {
+      query.$or = [
+        { vendorOrderNumber: { $regex: term, $options: "i" } },
+        { paymentStatus: { $regex: term, $options: "i" } },
+      ];
+    }
+  }
+  if (from || to) {
+    query.createdAt = {};
+    if (from) {
+      const fromDate = new Date(from);
+      if (!Number.isNaN(fromDate.getTime())) {
+        query.createdAt.$gte = fromDate;
+      }
+    }
+    if (to) {
+      const toDate = new Date(to);
+      if (!Number.isNaN(toDate.getTime())) {
+        toDate.setHours(23, 59, 59, 999);
+        query.createdAt.$lte = toDate;
+      }
+    }
+    if (!Object.keys(query.createdAt).length) delete query.createdAt;
+  }
 
   const pageNum = Math.max(parseInt(page, 10) || 1, 1);
   const limitNum = Math.max(parseInt(limit, 10) || 20, 1);

@@ -560,15 +560,52 @@ async function adminCreateProduct(req, res) {
 }
 
 async function adminListProducts(req, res) {
-  const { status, vendorId, featured } = req.query;
+  const { status, vendorId, featured, q, page = 1, limit = 20 } = req.query;
 
   const query = {};
   if (status) query.status = status;
   if (vendorId) query.vendorId = vendorId;
   if (featured === "true") query.isFeatured = true;
+  if (q) {
+    const term = String(q).trim();
+    if (term) {
+      query.$or = [
+        { title: { $regex: term, $options: "i" } },
+        { slug: { $regex: term, $options: "i" } },
+        { description: { $regex: term, $options: "i" } },
+      ];
+    }
+  }
 
-  const products = await Product.find(query).sort({ createdAt: -1 }).lean();
-  res.json({ products: products.map((p) => localizeProduct(p, req.lang)) });
+  const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+  const limitNum = Math.max(parseInt(limit, 10) || 20, 1);
+  const skip = (pageNum - 1) * limitNum;
+  const total = await Product.countDocuments(query);
+
+  const products = await Product.find(query)
+    .populate("vendorId", "storeName")
+    .populate("categoryId", "name")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limitNum)
+    .lean();
+
+  res.json({
+    products: products.map((p) =>
+      localizeProduct(
+        {
+          ...p,
+          vendorName: p.vendorId?.storeName || "",
+          categoryName: p.categoryId?.name || "",
+        },
+        req.lang
+      )
+    ),
+    total,
+    page: pageNum,
+    limit: limitNum,
+    pages: Math.ceil(total / limitNum),
+  });
 }
 
 async function adminUpdateProduct(req, res) {
