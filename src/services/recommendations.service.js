@@ -77,6 +77,13 @@ async function getTrendingProducts(limit = 20, days = 30) {
       { $limit: limit * 2 } // Get more to account for filtering
     ]);
 
+    if (!trending.length) {
+      return Product.find({ status: "approved" })
+        .sort({ isFeatured: -1, createdAt: -1 })
+        .limit(limit)
+        .lean();
+    }
+
     const productIds = trending.map(t => t._id);
     
     // Get full product details
@@ -102,6 +109,13 @@ async function getTrendingProducts(limit = 20, days = 30) {
       }))
       .sort((a, b) => b.trendingScore - a.trendingScore)
       .slice(0, limit);
+
+    if (!result.length) {
+      return Product.find({ status: "approved" })
+        .sort({ isFeatured: -1, createdAt: -1 })
+        .limit(limit)
+        .lean();
+    }
 
     return result;
   } catch (error) {
