@@ -1,5 +1,4 @@
 const { z } = require("zod");
-const mongoose = require("mongoose");
 const CustomerAddress = require("../models/CustomerAddress");
 
 const createSchema = z.object({
@@ -36,53 +35,38 @@ async function getMyAddress(req, res) {
 async function createAddress(req, res) {
   const body = createSchema.parse(req.body);
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
   try {
-    // If making default, unset others
     if (body.isDefault === true) {
       await CustomerAddress.updateMany(
         { customerUserId: req.user._id, isDefault: true },
-        { $set: { isDefault: false } },
-        { session }
+        { $set: { isDefault: false } }
       );
     }
 
-    // If user has no addresses yet, force default true
-    const count = await CustomerAddress.countDocuments({ customerUserId: req.user._id }).session(session);
+    const count = await CustomerAddress.countDocuments({ customerUserId: req.user._id });
     const isDefault = count === 0 ? true : !!body.isDefault;
 
-    const created = await CustomerAddress.create(
-      [
-        {
-          customerUserId: req.user._id,
-          label: body.label || (isDefault ? "Default" : "Address"),
-          isDefault,
+    const created = await CustomerAddress.create({
+      customerUserId: req.user._id,
+      label: body.label || (isDefault ? "Default" : "Address"),
+      isDefault,
 
-          companyName: body.companyName || "",
-          contactPerson: body.contactPerson || "",
-          phone: body.phone || "",
+      companyName: body.companyName || "",
+      contactPerson: body.contactPerson || "",
+      phone: body.phone || "",
 
-          country: body.country,
-          city: body.city,
-          postalCode: body.postalCode || "",
+      country: body.country,
+      city: body.city,
+      postalCode: body.postalCode || "",
 
-          street1: body.street1,
-          street2: body.street2 || "",
+      street1: body.street1,
+      street2: body.street2 || "",
 
-          notes: body.notes || "",
-        },
-      ],
-      { session }
-    );
+      notes: body.notes || "",
+    });
 
-    await session.commitTransaction();
-    session.endSession();
-
-    res.status(201).json({ address: created[0] });
+    res.status(201).json({ address: created });
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
     res.status(500).json({ message: err.message || "Failed to create address" });
   }
 }
@@ -90,30 +74,23 @@ async function createAddress(req, res) {
 async function updateAddress(req, res) {
   const body = createSchema.partial().parse(req.body);
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
   try {
-    const addr = await CustomerAddress.findOne({ _id: req.params.id, customerUserId: req.user._id }).session(session);
+    const addr = await CustomerAddress.findOne({ _id: req.params.id, customerUserId: req.user._id });
     if (!addr) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ message: "Address not found" });
     }
 
     if (body.isDefault === true) {
       await CustomerAddress.updateMany(
         { customerUserId: req.user._id, isDefault: true },
-        { $set: { isDefault: false } },
-        { session }
+        { $set: { isDefault: false } }
       );
       addr.isDefault = true;
     } else if (body.isDefault === false) {
-      // prevent unsetting if it’s the only address
-      const count = await CustomerAddress.countDocuments({ customerUserId: req.user._id }).session(session);
+      const count = await CustomerAddress.countDocuments({ customerUserId: req.user._id });
       if (count > 1) addr.isDefault = false;
     }
 
-    // update fields
     const fields = [
       "label",
       "companyName",
@@ -131,88 +108,68 @@ async function updateAddress(req, res) {
       if (body[f] !== undefined) addr[f] = body[f];
     }
 
-    await addr.save({ session });
+    await addr.save();
 
-    // Ensure at least one default exists
-    const anyDefault = await CustomerAddress.countDocuments({ customerUserId: req.user._id, isDefault: true }).session(session);
+    const anyDefault = await CustomerAddress.countDocuments({
+      customerUserId: req.user._id,
+      isDefault: true,
+    });
+
     if (!anyDefault) {
-      const newest = await CustomerAddress.findOne({ customerUserId: req.user._id }).sort({ createdAt: -1 }).session(session);
+      const newest = await CustomerAddress.findOne({ customerUserId: req.user._id }).sort({ createdAt: -1 });
       if (newest) {
         newest.isDefault = true;
-        await newest.save({ session });
+        await newest.save();
       }
     }
 
-    await session.commitTransaction();
-    session.endSession();
-
     res.json({ address: addr });
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
     res.status(500).json({ message: err.message || "Failed to update address" });
   }
 }
 
 async function deleteAddress(req, res) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
   try {
-    const addr = await CustomerAddress.findOne({ _id: req.params.id, customerUserId: req.user._id }).session(session);
+    const addr = await CustomerAddress.findOne({ _id: req.params.id, customerUserId: req.user._id });
     if (!addr) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ message: "Address not found" });
     }
 
     const wasDefault = addr.isDefault;
-    await CustomerAddress.deleteOne({ _id: addr._id }).session(session);
+    await CustomerAddress.deleteOne({ _id: addr._id });
 
-    // If deleted default, pick another as default
     if (wasDefault) {
-      const next = await CustomerAddress.findOne({ customerUserId: req.user._id }).sort({ createdAt: -1 }).session(session);
+      const next = await CustomerAddress.findOne({ customerUserId: req.user._id }).sort({ createdAt: -1 });
       if (next) {
         next.isDefault = true;
-        await next.save({ session });
+        await next.save();
       }
     }
 
-    await session.commitTransaction();
-    session.endSession();
     res.json({ ok: true });
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
     res.status(500).json({ message: err.message || "Failed to delete address" });
   }
 }
 
 async function setDefaultAddress(req, res) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
   try {
-    const addr = await CustomerAddress.findOne({ _id: req.params.id, customerUserId: req.user._id }).session(session);
+    const addr = await CustomerAddress.findOne({ _id: req.params.id, customerUserId: req.user._id });
     if (!addr) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(404).json({ message: "Address not found" });
     }
 
     await CustomerAddress.updateMany(
       { customerUserId: req.user._id, isDefault: true },
-      { $set: { isDefault: false } },
-      { session }
+      { $set: { isDefault: false } }
     );
 
     addr.isDefault = true;
-    await addr.save({ session });
+    await addr.save();
 
-    await session.commitTransaction();
-    session.endSession();
     res.json({ address: addr });
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
     res.status(500).json({ message: err.message || "Failed to set default address" });
   }
 }
