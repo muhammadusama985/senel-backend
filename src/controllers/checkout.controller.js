@@ -1,5 +1,4 @@
 const { notifyUser, notifyVendorOwner } = require("../services/notification.service");
-const mongoose = require("mongoose");
 const { z } = require("zod");
 const {logEvent} = require ("../services/analyticsEvents.service");
 
@@ -170,21 +169,18 @@ async function checkout(req, res) {
     };
   }
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     // Re-validate and rebuild vendor grouping with fresh product data
     const validatedItems = [];
     const vendorBuckets = new Map(); // vendorId => { vendor, items: [], fulfillmentType, fulfillmentOwner }
 
     for (const item of cart.items) {
-      const product = await Product.findById(item.productId).session(session);
+      const product = await Product.findById(item.productId);
       if (!product || product.status !== "approved") {
         throw Object.assign(new Error("Some products are not available anymore"), { statusCode: 400 });
       }
 
-      const vendor = product.vendorId ? await Vendor.findById(product.vendorId).session(session) : null;
+      const vendor = product.vendorId ? await Vendor.findById(product.vendorId) : null;
       if (!isAdminFulfillmentProduct(product)) {
         ensureVendorReceivesOrders(vendor);
       } else if (product.vendorId && !vendor) {
@@ -248,7 +244,6 @@ async function checkout(req, res) {
         variantSku: product.hasVariants ? variantSku : undefined,
         delta: -Math.abs(qty),
         reason: "ORDER_PLACED",
-        session,
       });
     }
 
@@ -257,7 +252,7 @@ async function checkout(req, res) {
     let vendorDiscounts = {};
 
     if (cart.appliedCoupon?.couponId) {
-      const coupon = await Coupon.findById(cart.appliedCoupon.couponId).session(session).lean();
+      const coupon = await Coupon.findById(cart.appliedCoupon.couponId).lean();
       if (coupon) {
         // Enforce total usage limit at checkout (stronger)
         if (coupon.usageLimitTotal && coupon.usageLimitTotal > 0 && coupon.usedCount >= coupon.usageLimitTotal) {
@@ -266,7 +261,7 @@ async function checkout(req, res) {
 
         // Enforce per-user limit at checkout (source of truth)
         if (coupon.usageLimitPerUser && coupon.usageLimitPerUser > 0) {
-          const red = await CouponRedemption.findOne({ couponId: coupon._id, userId: req.user._id }).session(session);
+          const red = await CouponRedemption.findOne({ couponId: coupon._id, userId: req.user._id });
           const usedByUser = red?.usedCount || 0;
 
           if (usedByUser >= coupon.usageLimitPerUser) {
@@ -373,8 +368,7 @@ async function checkout(req, res) {
         status: orderStatus,         // ✅ Always "placed"
         orderNumber,
         coupon: couponSnapshot || { code: "", couponId: null, scope: "", vendorId: null, discountType: "", value: 0 },
-      }],
-      { session }
+      }]
     );
 
     const createdOrder = order[0];
@@ -391,8 +385,7 @@ async function checkout(req, res) {
           grandTotal: createdOrder.grandTotal,
           coupon: createdOrder.coupon?.code || "",
         },
-      },
-      session
+      }
     );
 
     // Split into vendor orders
@@ -437,7 +430,6 @@ async function checkout(req, res) {
             vendorOrderNumber,
           },
         ],
-        { session }
       );
 
       vendorOrders.push(vo[0]);
@@ -468,22 +460,21 @@ async function checkout(req, res) {
       }
     }
 
-    await OrderItem.insertMany(itemsToInsert, { session });
+    await OrderItem.insertMany(itemsToInsert);
 
     // Increment coupon usage counts (both total and per-user)
     if (couponSnapshot?.couponId) {
       // total usage increment
       await Coupon.updateOne(
         { _id: couponSnapshot.couponId },
-        { $inc: { usedCount: 1 } },
-        { session }
+        { $inc: { usedCount: 1 } }
       );
 
       // per-user usage increment (upsert)
       await CouponRedemption.updateOne(
         { couponId: couponSnapshot.couponId, userId: req.user._id },
         { $inc: { usedCount: 1 } },
-        { upsert: true, session }
+        { upsert: true }
       );
     }
 
@@ -494,7 +485,7 @@ async function checkout(req, res) {
     cart.appliedCoupon = { code: "", couponId: null, scope: "", vendorId: null, discountType: "", value: 0 };
     cart.discountTotal = 0;
     cart.grandTotal = 0;
-    await cart.save({ session });
+    await cart.save();
 
     // Audit
     await AuditLog.create(
@@ -506,12 +497,8 @@ async function checkout(req, res) {
           entityId: createdOrder._id,
           meta: { orderNumber: createdOrder.orderNumber, vendorOrders: vendorOrders.map((x) => x.vendorOrderNumber) },
         },
-      ],
-      { session }
+      ]
     );
-
-    await session.commitTransaction();
-    session.endSession();
 
     // Customer notification
     await notifyUser({
@@ -540,9 +527,6 @@ async function checkout(req, res) {
       vendorOrders,
     });
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
-
     const status = err.statusCode || 500;
     res.status(status).json({ message: err.message || "Checkout failed" });
   }
