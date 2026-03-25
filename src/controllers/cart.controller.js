@@ -142,6 +142,33 @@ function computePricingSnapshot(product, qty) {
 
 async function getMyCart(req, res) {
   const cart = await getOrCreateCart(req.user._id);
+  const itemsMissingMoq = (cart.items || []).filter((item) => !item.moq || item.moq < 1);
+
+  if (itemsMissingMoq.length) {
+    const productIds = [...new Set(itemsMissingMoq.map((item) => String(item.productId)))];
+    const products = await Product.find({ _id: { $in: productIds } })
+      .select("_id moq title imageUrls vendorId requiresManualShipping")
+      .lean();
+    const productMap = new Map(products.map((product) => [String(product._id), product]));
+
+    let changed = false;
+    for (const item of cart.items) {
+      if (item.moq && item.moq >= 1) continue;
+      const product = productMap.get(String(item.productId));
+      if (!product) continue;
+      item.moq = Math.max(1, Number(product.moq || 1));
+      item.title = product.title || item.title;
+      item.imageUrl = pickProductImage(product) || item.imageUrl;
+      item.vendorId = product.vendorId || item.vendorId;
+      item.requiresManualShipping = Boolean(product.requiresManualShipping);
+      changed = true;
+    }
+
+    if (changed) {
+      await cart.save();
+    }
+  }
+
   res.json({ cart });
 }
 
@@ -223,7 +250,9 @@ async function addItem(req, res) {
     existing.lineTotal = newPricing.lineTotal;
     existing.title = product.title;
     existing.imageUrl = pickProductImage(product);
+    existing.moq = product.moq;
     existing.variantAttributes = getVariantAttributes(product, variantSku);
+    existing.requiresManualShipping = product.requiresManualShipping || false;
   } else {
     cart.items.push({
       productId: product._id,
@@ -231,6 +260,7 @@ async function addItem(req, res) {
       variantSku,
       variantAttributes: getVariantAttributes(product, variantSku),
       qty: body.qty,
+      moq: product.moq,
       unitPrice: pricing.unitPrice,
       currency: pricing.currency,
       tierMinQtyApplied: pricing.tierMinQtyApplied,
@@ -326,6 +356,7 @@ async function updateItemQty(req, res) {
   }
 
   item.qty = body.qty;
+  item.moq = product.moq;
   item.unitPrice = pricing.unitPrice;
   item.currency = pricing.currency;
   item.tierMinQtyApplied = pricing.tierMinQtyApplied;

@@ -30,6 +30,7 @@ const productSchema = new mongoose.Schema(
       de: { type: String, default: "", trim: true },
       tr: { type: String, default: "", trim: true },
     },
+    sku: { type: String, default: "", trim: true, index: true },
     slug: { type: String, required: true, trim: true, lowercase: true, index: true },
     description: { type: String, default: "" },
     descriptionML: {

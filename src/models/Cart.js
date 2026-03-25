@@ -10,6 +10,7 @@ const cartItemSchema = new mongoose.Schema(
     variantAttributes: { type: Object, default: {} },
 
     qty: { type: Number, required: true, min: 1 },
+    moq: { type: Number, required: true, min: 1, default: 1 },
 
     // Snapshot pricing (truth recalculated server-side on every change)
     unitPrice: { type: Number, required: true, min: 0 },

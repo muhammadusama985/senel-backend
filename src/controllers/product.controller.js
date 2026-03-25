@@ -46,6 +46,7 @@ const createProductSchema = z.object({
   attributeSetId: z.string().nullable().optional(),
   country: z.string().optional(),
   currency: z.enum(["EUR", "TRY", "USD"]).optional(),
+  sku: z.string().optional(),
   moq: z.number().int().min(1),
   priceTiers: z.array(priceTierInput).min(1),
   hasVariants: z.boolean().optional(),
@@ -72,6 +73,7 @@ const adminUpdateSchema = z.object({
   descriptionML: mlInput.optional(),
   categoryId: z.string().optional(),
   attributeSetId: z.string().nullable().optional(),
+  sku: z.string().optional(),
   moq: z.number().int().min(1).optional(),
   priceTiers: z.array(priceTierInput).optional(),
   stockQty: z.number().int().min(0).optional(),
@@ -188,10 +190,72 @@ function normalizeInventoryPayload(body, currentProduct = null) {
   };
 }
 
+function normalizeSkuValue(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-zA-Z0-9-_]/g, "")
+    .toUpperCase();
+}
+
+function buildGeneratedSku(title, suffix = "SKU") {
+  const base = slugify(title || "product")
+    .replace(/-/g, "")
+    .toUpperCase()
+    .slice(0, 8) || "PRODUCT";
+  const stamp = Date.now().toString(36).toUpperCase().slice(-4);
+  return `${base}-${suffix}-${stamp}`;
+}
+
+function normalizeVariants(variants = [], title = "") {
+  if (!Array.isArray(variants) || variants.length === 0) {
+    const err = new Error("At least one variant is required when variants are enabled");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const seen = new Set();
+
+  return variants.map((variant, index) => {
+    const normalizedSku = normalizeSkuValue(variant?.sku) || buildGeneratedSku(title, `VAR${index + 1}`);
+    const skuKey = normalizedSku.toUpperCase();
+
+    if (seen.has(skuKey)) {
+      const err = new Error(`Duplicate variant SKU found: ${normalizedSku}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    seen.add(skuKey);
+
+    return {
+      sku: normalizedSku,
+      attributes: variant?.attributes || {},
+      stockQty: Math.max(0, Number(variant?.stockQty || 0)),
+      imageUrls: Array.isArray(variant?.imageUrls) ? variant.imageUrls : [],
+    };
+  });
+}
+
+function resolveProductSku(body, currentProduct = null, title = "") {
+  return (
+    normalizeSkuValue(body?.sku) ||
+    normalizeSkuValue(currentProduct?.sku) ||
+    buildGeneratedSku(title, "SKU")
+  );
+}
+
 function validateMOQAndTiers(moq, priceTiers) {
+  const originalTierCount = Array.isArray(priceTiers) ? priceTiers.length : 0;
   const normalized = normalizeTiers(priceTiers);
   if (!normalized.length) {
     const err = new Error("At least one price tier is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (normalized.length !== originalTierCount) {
+    const err = new Error("Price tier quantities must be valid and unique");
     err.statusCode = 400;
     throw err;
   }
@@ -283,11 +347,14 @@ async function vendorCreateProduct(req, res) {
   const slug = await ensureUniqueSlug({ vendorId: vendor._id, title: localizedFields.title });
   const normalizedTiers = validateMOQAndTiers(body.moq, body.priceTiers);
   const inventory = normalizeInventoryPayload(body);
+  const normalizedVariants = inventory.hasVariants ? normalizeVariants(inventory.variants, localizedFields.title) : [];
+  const sku = resolveProductSku(body, null, localizedFields.title);
 
   const product = await Product.create({
     vendorId: vendor._id,
     title: localizedFields.title,
     titleML: localizedFields.titleML,
+    sku,
     slug,
     description: localizedFields.description,
     descriptionML: localizedFields.descriptionML,
@@ -299,7 +366,7 @@ async function vendorCreateProduct(req, res) {
     priceTiers: normalizedTiers,
     hasVariants: inventory.hasVariants,
     stockQty: inventory.stockQty,
-    variants: inventory.variants,
+    variants: normalizedVariants,
     imageUrls: body.imageUrls ?? [],
     trackInventory: body.trackInventory ?? true,
     lowStockThreshold: body.lowStockThreshold ?? 5,
@@ -385,6 +452,11 @@ async function vendorUpdateMyProduct(req, res) {
     product.titleML = localizedFields.titleML;
     product.description = localizedFields.description;
     product.descriptionML = localizedFields.descriptionML;
+    product.sku = resolveProductSku(body, product, localizedFields.title);
+  }
+
+  if (body.sku !== undefined && body.title === undefined && body.titleML === undefined) {
+    product.sku = resolveProductSku(body, product, product.title);
   }
 
   if (body.categoryId !== undefined) product.categoryId = body.categoryId;
@@ -407,7 +479,7 @@ async function vendorUpdateMyProduct(req, res) {
     const inventory = normalizeInventoryPayload(body, product);
     product.hasVariants = inventory.hasVariants;
     product.stockQty = inventory.stockQty;
-    product.variants = inventory.variants;
+    product.variants = inventory.hasVariants ? normalizeVariants(inventory.variants, product.title) : [];
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
@@ -469,8 +541,15 @@ async function vendorSubmitProduct(req, res) {
   if (!product.priceTiers?.length) {
     return res.status(400).json({ message: "Price tiers are required" });
   }
-  if (product.hasVariants && (!product.variants?.length || product.variants.some((v) => !v.sku))) {
-    return res.status(400).json({ message: "Variants must include sku" });
+  if (!product.sku) {
+    product.sku = resolveProductSku({}, product, product.title);
+  }
+  if (product.hasVariants) {
+    try {
+      product.variants = normalizeVariants(product.variants, product.title);
+    } catch (error) {
+      return res.status(error.statusCode || 400).json({ message: error.message });
+    }
   }
 
   product.status = "submitted";
@@ -498,14 +577,17 @@ async function adminCreateProduct(req, res) {
   const slug = await ensureUniqueSlug({ vendorId: vendor?._id || null, title: localizedFields.title });
   const normalizedTiers = validateMOQAndTiers(body.moq, body.priceTiers);
   const inventory = normalizeInventoryPayload(body);
+  const normalizedVariants = inventory.hasVariants ? normalizeVariants(inventory.variants, localizedFields.title) : [];
   const status = body.autoApprove ? "approved" : "draft";
   const isPlatformProduct = !body.vendorId;
   const source = isPlatformProduct ? "admin_platform" : "admin_vendor";
+  const sku = resolveProductSku(body, null, localizedFields.title);
 
   const product = await Product.create({
     vendorId: vendor?._id || null,
     title: localizedFields.title,
     titleML: localizedFields.titleML,
+    sku,
     slug,
     description: localizedFields.description,
     descriptionML: localizedFields.descriptionML,
@@ -517,7 +599,7 @@ async function adminCreateProduct(req, res) {
     priceTiers: normalizedTiers,
     hasVariants: inventory.hasVariants,
     stockQty: inventory.stockQty,
-    variants: inventory.variants,
+    variants: normalizedVariants,
     imageUrls: body.imageUrls ?? [],
     trackInventory: body.trackInventory ?? true,
     lowStockThreshold: body.lowStockThreshold ?? 5,
@@ -643,6 +725,11 @@ async function adminUpdateProduct(req, res) {
     product.titleML = localizedFields.titleML;
     product.description = localizedFields.description;
     product.descriptionML = localizedFields.descriptionML;
+    product.sku = resolveProductSku(body, product, localizedFields.title);
+  }
+
+  if (body.sku !== undefined && body.title === undefined && body.titleML === undefined) {
+    product.sku = resolveProductSku(body, product, product.title);
   }
 
   if (body.categoryId !== undefined) product.categoryId = body.categoryId;
@@ -665,7 +752,7 @@ async function adminUpdateProduct(req, res) {
     const inventory = normalizeInventoryPayload(body, product);
     product.hasVariants = inventory.hasVariants;
     product.stockQty = inventory.stockQty;
-    product.variants = inventory.variants;
+    product.variants = inventory.hasVariants ? normalizeVariants(inventory.variants, product.title) : [];
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
