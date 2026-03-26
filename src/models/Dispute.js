@@ -17,7 +17,7 @@ const disputeSchema = new mongoose.Schema(
 
     customerUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
 
-    vendorId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true, index: true },
+    vendorId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", default: null, index: true },
     vendorOrderId: { type: mongoose.Schema.Types.ObjectId, ref: "VendorOrder", default: null, index: true },
 
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null, index: true },

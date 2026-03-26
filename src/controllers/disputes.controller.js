@@ -6,12 +6,19 @@ const Vendor = require("../models/Vendor");
 const VendorOrder = require("../models/VendorOrder");
 const Order = require("../models/Order");
 const OrderItem = require("../models/OrderItem");
+const User = require("../models/User");
 const { generateDisputeNumber } = require("../utils/disputeNumber");
 const { notifyUser, notifyVendorOwner } = require("../services/notification.service");
 
 async function getVendorIdForUserIfVendor(userId) {
   const v = await Vendor.findOne({ ownerUserId: userId }).lean();
   return v?._id || null;
+}
+
+function formatCustomerLabel(user) {
+  if (!user) return "-";
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+  return fullName || user.email || user.phone || "Customer";
 }
 
 const createSchema = z.object({
@@ -71,17 +78,19 @@ async function customerCreateDispute(req, res) {
     }
   }
 
-  const vendorId =
-    vendorOrder?.vendorId || orderItem?.vendorId || null;
+  const vendorId = vendorOrder?.vendorId || orderItem?.vendorId || null;
+  const isAdminFulfillmentDispute =
+    vendorOrder?.fulfillmentType === "admin" ||
+    (!vendorId && (vendorOrder?._id || orderItem?._id || order?._id));
 
-  if (!vendorId) {
+  if (!vendorId && !isAdminFulfillmentDispute) {
     return res.status(400).json({ message: "Could not infer vendorId; provide vendorOrderId or orderItemId with vendor" });
   }
 
   const dispute = await Dispute.create({
     disputeNumber: generateDisputeNumber(),
     customerUserId: req.user._id,
-    vendorId,
+    vendorId: vendorId || null,
     vendorOrderId: vendorOrder?._id || null,
     orderId: order?._id || null,
     orderItemId: orderItem?._id || null,
@@ -103,13 +112,15 @@ async function customerCreateDispute(req, res) {
   });
 
   // Notify vendor owner
-  await notifyVendorOwner({
-    vendorId,
-    title: "New dispute opened",
-    body: `Dispute ${dispute.disputeNumber}: ${dispute.subject}`,
-    type: "dispute",
-    data: { disputeId: dispute._id, disputeNumber: dispute.disputeNumber },
-  });
+  if (vendorId) {
+    await notifyVendorOwner({
+      vendorId,
+      title: "New dispute opened",
+      body: `Dispute ${dispute.disputeNumber}: ${dispute.subject}`,
+      type: "dispute",
+      data: { disputeId: dispute._id, disputeNumber: dispute.disputeNumber },
+    });
+  }
 
   res.status(201).json({ dispute });
 }
@@ -174,8 +185,24 @@ async function getDisputeDetails(req, res) {
   }
   // admin can view all
 
+  const [customer, vendor] = await Promise.all([
+    dispute.customerUserId
+      ? User.findById(dispute.customerUserId).select("_id firstName lastName email phone").lean()
+      : null,
+    dispute.vendorId
+      ? Vendor.findById(dispute.vendorId).select("_id storeName").lean()
+      : null,
+  ]);
+
   const messages = await DisputeMessage.find({ disputeId: dispute._id }).sort({ createdAt: 1 }).lean();
-  res.json({ dispute, messages });
+  res.json({
+    dispute: {
+      ...dispute,
+      customerLabel: formatCustomerLabel(customer),
+      vendorLabel: vendor?.storeName || "Senel Admin",
+    },
+    messages,
+  });
 }
 
 const messageSchema = z.object({
@@ -196,7 +223,9 @@ async function postDisputeMessage(req, res) {
     senderRole = "customer";
   } else if (req.user.role === "vendor") {
     const vendorId = await getVendorIdForUserIfVendor(req.user._id);
-    if (!vendorId || String(dispute.vendorId) !== String(vendorId)) return res.status(403).json({ message: "Not allowed" });
+    if (!vendorId || !dispute.vendorId || String(dispute.vendorId) !== String(vendorId)) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
     senderRole = "vendor";
   } else if (req.user.role === "admin") {
     senderRole = "admin";
@@ -230,7 +259,7 @@ async function postDisputeMessage(req, res) {
       data: { disputeId: dispute._id, disputeNumber: dispute.disputeNumber },
     });
   }
-  if (senderRole === "customer" || senderRole === "admin") {
+  if ((senderRole === "customer" || senderRole === "admin") && dispute.vendorId) {
     await notifyVendorOwner({
       vendorId: dispute.vendorId,
       title: "Dispute update",
@@ -298,13 +327,15 @@ async function updateDisputeStatus(req, res) {
     type: "dispute",
     data: { disputeId: dispute._id, disputeNumber: dispute.disputeNumber, status: dispute.status },
   });
-  await notifyVendorOwner({
-    vendorId: dispute.vendorId,
-    title: "Dispute status updated",
-    body: `Dispute ${dispute.disputeNumber} is now "${dispute.status}"`,
-    type: "dispute",
-    data: { disputeId: dispute._id, disputeNumber: dispute.disputeNumber, status: dispute.status },
-  });
+  if (dispute.vendorId) {
+    await notifyVendorOwner({
+      vendorId: dispute.vendorId,
+      title: "Dispute status updated",
+      body: `Dispute ${dispute.disputeNumber} is now "${dispute.status}"`,
+      type: "dispute",
+      data: { disputeId: dispute._id, disputeNumber: dispute.disputeNumber, status: dispute.status },
+    });
+  }
 
   res.json({ dispute });
 }
