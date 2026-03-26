@@ -102,6 +102,26 @@ async function listProducts(req, res) {
     if (qp.maxMoq) query.moq.$lte = Number(qp.maxMoq);
   }
 
+  if (qp.minRating) {
+    const minRating = Number(qp.minRating);
+    if (!Number.isNaN(minRating) && minRating > 0) {
+      const ratings = await Review.aggregate([
+        { $match: { status: "approved" } },
+        { $group: { _id: "$productId", avgRating: { $avg: "$rating" } } },
+        { $match: { avgRating: { $gte: minRating } } },
+      ]);
+      const ratedProductIds = ratings.map((item) => item._id);
+
+      if (query._id && query._id.$in) {
+        query._id.$in = query._id.$in.filter((id) =>
+          ratedProductIds.some((ratedId) => String(ratedId) === String(id))
+        );
+      } else {
+        query._id = { $in: ratedProductIds };
+      }
+    }
+  }
+
   // Price filter: This is "best effort" because tier pricing is an array.
   // We filter by ANY tier unitPrice matching the range.
   if (qp.minPrice || qp.maxPrice) {
