@@ -18,17 +18,20 @@ async function listMyNotifications(req, res) {
     vendorId = v?._id || null;
   }
 
-  const query = {
-    $or: [
-      // direct user notifications
-      { targetUserId: req.user._id },
-      // vendor-targeted notifications
-      ...(vendorId ? [{ targetVendorId: vendorId }] : []),
-      // broadcasts by role
-      { targetRole: "all" },
-      { targetRole: req.user.role },
-    ],
-  };
+  let query;
+  if (req.user.role === "customer") {
+    // Customers have a dedicated announcements feed, so keep notifications personal here.
+    query = { targetUserId: req.user._id };
+  } else {
+    query = {
+      $or: [
+        { targetUserId: req.user._id },
+        ...(vendorId ? [{ targetVendorId: vendorId }] : []),
+        { targetRole: "all" },
+        { targetRole: req.user.role },
+      ],
+    };
+  }
 
   if (unreadOnly) query.isRead = false;
 
@@ -65,15 +68,23 @@ async function markAllRead(req, res) {
     vendorId = v?._id || null;
   }
 
-  const query = {
-    isRead: false,
-    $or: [
-      { targetUserId: req.user._id },
-      ...(vendorId ? [{ targetVendorId: vendorId }] : []),
-      { targetRole: "all" },
-      { targetRole: req.user.role },
-    ],
-  };
+  let query;
+  if (req.user.role === "customer") {
+    query = {
+      isRead: false,
+      targetUserId: req.user._id,
+    };
+  } else {
+    query = {
+      isRead: false,
+      $or: [
+        { targetUserId: req.user._id },
+        ...(vendorId ? [{ targetVendorId: vendorId }] : []),
+        { targetRole: "all" },
+        { targetRole: req.user.role },
+      ],
+    };
+  }
 
   await Notification.updateMany(query, { $set: { isRead: true, readAt: new Date() } });
   res.json({ ok: true });
