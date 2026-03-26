@@ -138,6 +138,31 @@ function computePricingSnapshot(product, qty) {
   };
 }
 
+async function serializeCart(cartDoc) {
+  const cart = cartDoc?.toObject ? cartDoc.toObject() : JSON.parse(JSON.stringify(cartDoc || {}));
+  const items = Array.isArray(cart.items) ? cart.items : [];
+  if (!items.length) return cart;
+
+  const productIds = [...new Set(items.map((item) => String(item.productId)).filter(Boolean))];
+  const products = await Product.find({ _id: { $in: productIds } })
+    .select("_id status stockQty hasVariants variants")
+    .lean();
+  const productMap = new Map(products.map((product) => [String(product._id), product]));
+
+  cart.items = items.map((item) => {
+    const product = productMap.get(String(item.productId));
+    const availableStock = product ? getAvailableStock(product, item.variantSku || "") : 0;
+
+    return {
+      ...item,
+      availableStock,
+      isAvailable: Boolean(product && product.status === "approved"),
+    };
+  });
+
+  return cart;
+}
+
 /** -------------------- GET CART -------------------- **/
 
 async function getMyCart(req, res) {
@@ -169,7 +194,7 @@ async function getMyCart(req, res) {
     }
   }
 
-  res.json({ cart });
+  res.json({ cart: await serializeCart(cart) });
 }
 
 /** -------------------- ADD ITEM -------------------- **/
@@ -294,7 +319,7 @@ async function addItem(req, res) {
     }
   });
 
-  res.json({ cart });
+  res.json({ cart: await serializeCart(cart) });
 }
 
 /** -------------------- UPDATE QTY -------------------- **/
@@ -390,7 +415,7 @@ async function updateItemQty(req, res) {
     }
   });
 
-  res.json({ cart });
+  res.json({ cart: await serializeCart(cart) });
 }
 
 /** -------------------- REMOVE ITEM -------------------- **/
@@ -432,7 +457,7 @@ async function removeItem(req, res) {
     }
   });
 
-  res.json({ cart });
+  res.json({ cart: await serializeCart(cart) });
 }
 
 /** -------------------- CLEAR CART -------------------- **/
@@ -475,7 +500,7 @@ async function clearCart(req, res) {
     });
   }
 
-  res.json({ cart });
+  res.json({ cart: await serializeCart(cart) });
 }
 
 module.exports = {
