@@ -10,7 +10,12 @@ const User = require("../models/User");
 const { generateDisputeNumber } = require("../utils/disputeNumber");
 const { notifyUser, notifyVendorOwner } = require("../services/notification.service");
 
-async function getVendorIdForUserIfVendor(userId) {
+async function getVendorIdForUserIfVendor(userOrReq) {
+  if (userOrReq?.vendorContext?.vendorId) {
+    return userOrReq.vendorContext.vendorId;
+  }
+
+  const userId = userOrReq?.user?._id || userOrReq?._id || userOrReq;
   const v = await Vendor.findOne({ ownerUserId: userId }).lean();
   return v?._id || null;
 }
@@ -142,7 +147,7 @@ async function customerListMyDisputes(req, res) {
 }
 
 async function vendorListMyDisputes(req, res) {
-  const vendorId = await getVendorIdForUserIfVendor(req.user._id);
+  const vendorId = await getVendorIdForUserIfVendor(req);
   if (!vendorId) return res.status(403).json({ message: "Vendor profile not found" });
 
   const page = Math.max(parseInt(req.query.page || "1", 10), 1);
@@ -180,7 +185,7 @@ async function getDisputeDetails(req, res) {
     if (String(dispute.customerUserId) !== String(req.user._id)) return res.status(403).json({ message: "Not allowed" });
   }
   if (req.user.role === "vendor") {
-    const vendorId = await getVendorIdForUserIfVendor(req.user._id);
+    const vendorId = await getVendorIdForUserIfVendor(req);
     if (!vendorId || String(dispute.vendorId) !== String(vendorId)) return res.status(403).json({ message: "Not allowed" });
   }
   // admin can view all
@@ -222,7 +227,7 @@ async function postDisputeMessage(req, res) {
     if (String(dispute.customerUserId) !== String(req.user._id)) return res.status(403).json({ message: "Not allowed" });
     senderRole = "customer";
   } else if (req.user.role === "vendor") {
-    const vendorId = await getVendorIdForUserIfVendor(req.user._id);
+    const vendorId = await getVendorIdForUserIfVendor(req);
     if (!vendorId || !dispute.vendorId || String(dispute.vendorId) !== String(vendorId)) {
       return res.status(403).json({ message: "Not allowed" });
     }
@@ -288,7 +293,7 @@ async function updateDisputeStatus(req, res) {
   // - vendor: can set to in_progress/resolved (not closed)
   // - customer: can set to in_progress (reopen discussion) (not resolved/closed)
   if (req.user.role === "vendor") {
-    const vendorId = await getVendorIdForUserIfVendor(req.user._id);
+    const vendorId = await getVendorIdForUserIfVendor(req);
     if (!vendorId || String(dispute.vendorId) !== String(vendorId)) return res.status(403).json({ message: "Not allowed" });
     if (body.status === "closed") return res.status(403).json({ message: "Vendor cannot close disputes" });
     if (body.status === "open") return res.status(403).json({ message: "Vendor cannot set open" });
