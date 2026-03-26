@@ -9,7 +9,7 @@ async function requireAuth(req, res, next) {
     if (!token) return res.status(401).json({ message: "Missing access token" });
 
     const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-    const user = await User.findById(payload.sub).select("-passwordHash").lean();
+    const user = await User.findById(payload.sub).select("-passwordHash");
 
     if (!user) return res.status(401).json({ message: "Invalid token user" });
     if (user.status !== "active") return res.status(403).json({ message: "Account not active" });

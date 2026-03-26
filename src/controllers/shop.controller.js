@@ -20,6 +20,10 @@ function localizeProduct(product, lang = "en") {
   };
 }
 
+function escapeRegex(value = "") {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * GET /api/v1/shop/products
  * Public endpoint: lists only APPROVED products with filters + pagination.
@@ -106,18 +110,37 @@ async function listProducts(req, res) {
     if (qp.maxPrice) query.priceTiers.$elemMatch.unitPrice = { ...(query.priceTiers.$elemMatch.unitPrice || {}), $lte: Number(qp.maxPrice) };
   }
 
-  // Text search
+  // Search
   let projection = null;
   let sort = { createdAt: -1 };
 
   if (qp.q && qp.q.trim()) {
-    query.$text = { $search: qp.q.trim() };
-    projection = { score: { $meta: "textScore" } };
-    sort = { score: { $meta: "textScore" }, createdAt: -1 };
+    const rx = new RegExp(escapeRegex(qp.q.trim()), "i");
+    const searchOr = [
+      { title: rx },
+      { slug: rx },
+      { "titleML.en": rx },
+      { "titleML.de": rx },
+      { "titleML.tr": rx },
+      { description: rx },
+      { "descriptionML.en": rx },
+      { "descriptionML.de": rx },
+      { "descriptionML.tr": rx },
+      { sku: rx },
+    ];
+
+    if (query.$or) {
+      query.$and = [{ $or: query.$or }, { $or: searchOr }];
+      delete query.$or;
+    } else {
+      query.$or = searchOr;
+    }
+
+    sort = { isFeatured: -1, createdAt: -1 };
   }
 
-  // Sorting options (if no text sort)
-  if (!query.$text && qp.sort) {
+  // Sorting options (if no search sort override)
+  if (!qp.q && qp.sort) {
     if (qp.sort === "newest") sort = { createdAt: -1 };
     if (qp.sort === "price_asc") sort = { "priceTiers.unitPrice": 1 };
     if (qp.sort === "price_desc") sort = { "priceTiers.unitPrice": -1 };
