@@ -1,8 +1,8 @@
 const { notifyVendorOwner } = require("../services/notification.service");
 const { z } = require("zod");
-const mongoose = require("mongoose");
 const PayoutRequest = require("../models/PayoutRequest");
 const AuditLog = require("../models/AuditLog");
+const Wallet = require("../models/Wallet");
 const { applyTransaction, ensureWallet } = require("../services/wallet.service");
 
 // GET /api/v1/admin/payouts?status=requested
@@ -12,7 +12,22 @@ async function adminListPayoutRequests(req, res) {
     if (status) query.status = status;
 
     const items = await PayoutRequest.find(query).sort({ createdAt: -1 }).lean();
-    res.json({ items });
+    const walletIds = Array.from(new Set(items.map((item) => String(item.walletId || "")).filter(Boolean)));
+    const wallets = walletIds.length
+        ? await Wallet.find({ _id: { $in: walletIds } }).select("_id balance currency").lean()
+        : [];
+    const walletMap = new Map(wallets.map((wallet) => [String(wallet._id), wallet]));
+
+    res.json({
+        items: items.map((item) => {
+            const wallet = walletMap.get(String(item.walletId || ""));
+            return {
+                ...item,
+                walletBalance: Number(wallet?.balance || 0),
+                walletCurrency: wallet?.currency || "EUR",
+            };
+        }),
+    });
 }
 
 // POST /api/v1/admin/payouts/:payoutRequestId/approve
@@ -97,17 +112,14 @@ async function adminMarkPayoutPaid(req, res) {
     const payoutRequestId = req.params.payoutRequestId;
     const body = markPaidSchema.parse(req.body);
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-        const pr = await PayoutRequest.findById(payoutRequestId).session(session);
+        const pr = await PayoutRequest.findById(payoutRequestId);
         if (!pr) throw Object.assign(new Error("Payout request not found"), { statusCode: 404 });
 
         if (pr.status !== "approved") throw Object.assign(new Error(`Cannot mark paid in status ${pr.status}`), { statusCode: 400 });
 
         // Ensure wallet exists and has balance
-        await ensureWallet(pr.vendorId, session);
+        await ensureWallet(pr.vendorId);
 
         // Debit the wallet (ledger entry)
         await applyTransaction({
@@ -118,7 +130,6 @@ async function adminMarkPayoutPaid(req, res) {
             referenceType: "PayoutRequest",
             referenceId: pr._id,
             createdByAdminId: req.user._id,
-            session,
         });
 
         pr.status = "paid";
@@ -126,23 +137,15 @@ async function adminMarkPayoutPaid(req, res) {
         pr.paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
         pr.reviewedByAdminId = pr.reviewedByAdminId || req.user._id;
         pr.reviewedAt = pr.reviewedAt || new Date();
-        await pr.save({ session });
+        await pr.save();
 
-        await AuditLog.create(
-            [
-                {
-                    actorUserId: req.user._id,
-                    action: "PAYOUT_MARKED_PAID",
-                    entityType: "PayoutRequest",
-                    entityId: pr._id,
-                    meta: { amount: pr.amount, vendorId: pr.vendorId, externalReference: pr.externalReference },
-                },
-            ],
-            { session }
-        );
-
-        await session.commitTransaction();
-        session.endSession();
+        await AuditLog.create({
+            actorUserId: req.user._id,
+            action: "PAYOUT_MARKED_PAID",
+            entityType: "PayoutRequest",
+            entityId: pr._id,
+            meta: { amount: pr.amount, vendorId: pr.vendorId, externalReference: pr.externalReference },
+        });
 
         await notifyVendorOwner({
             vendorId: pr.vendorId,
@@ -154,8 +157,6 @@ async function adminMarkPayoutPaid(req, res) {
 
         res.json({ payoutRequest: pr });
     } catch (err) {
-        await session.abortTransaction();
-        session.endSession();
         res.status(err.statusCode || 500).json({ message: err.message || "Failed to mark payout paid" });
     }
 }
