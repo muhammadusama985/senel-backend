@@ -1,17 +1,9 @@
 const { z } = require("zod");
 const Review = require("../models/Review");
+const Order = require("../models/Order");
 const OrderItem = require("../models/OrderItem");
 const VendorOrder = require("../models/VendorOrder");
 const Product = require("../models/Product");
-
-// Purchase verification helpers
-async function hasPurchasedProduct(customerUserId, productId) {
-  const item = await OrderItem.findOne({ productId, }).populate("orderId").lean(); // fallback if order not embedded
-  // Better: OrderItem already stores orderId; we must ensure order belongs to customer.
-  // We'll do it via VendorOrder->Order in a lightweight way using OrderItem.orderId + Order lookup:
-  // But we don’t import Order here to keep light; instead we store orderId in review at time of lookup in controller below.
-  return !!item;
-}
 
 const createProductReviewSchema = z.object({
   productId: z.string().min(1),
@@ -24,31 +16,61 @@ async function createProductReview(req, res) {
   const body = createProductReviewSchema.parse(req.body);
 
   const product = await Product.findById(body.productId).lean();
-  if (!product || product.status !== "approved") return res.status(400).json({ message: "Product not available" });
+  if (!product || product.status !== "approved") {
+    return res.status(400).json({ message: "Product not available" });
+  }
 
-  // Verify purchase: customer must have an OrderItem for this product AND the order must belong to this customer.
-  // We use OrderItem + vendorOrderId -> VendorOrder -> orderId -> (Order) owner check via VendorOrder only.
-  // For strictness, you can also join to Order model; here’s a safe baseline:
-  const oi = await OrderItem.findOne({ productId: product._id }).sort({ createdAt: -1 }).lean();
-  if (!oi) return res.status(403).json({ message: "You can review only after purchasing this product" });
+  const candidateItems = await OrderItem.find({ productId: product._id }).sort({ createdAt: -1 }).lean();
+  if (!candidateItems.length) {
+    return res.status(403).json({ message: "You can review only after purchasing this product" });
+  }
 
-  // Create review (pending by default; you can auto-approve if you want)
+  const orderIds = [...new Set(candidateItems.map((item) => String(item.orderId)).filter(Boolean))];
+  const vendorOrderIds = [...new Set(candidateItems.map((item) => String(item.vendorOrderId)).filter(Boolean))];
+
+  const [orders, deliveredVendorOrders] = await Promise.all([
+    Order.find({
+      _id: { $in: orderIds },
+      customerUserId: req.user._id,
+    })
+      .select("_id")
+      .lean(),
+    VendorOrder.find({
+      _id: { $in: vendorOrderIds },
+      status: "delivered",
+    })
+      .select("_id")
+      .lean(),
+  ]);
+
+  const allowedOrderIds = new Set(orders.map((order) => String(order._id)));
+  const deliveredVendorOrderIds = new Set(deliveredVendorOrders.map((item) => String(item._id)));
+
+  const orderItem = candidateItems.find(
+    (item) =>
+      allowedOrderIds.has(String(item.orderId)) &&
+      deliveredVendorOrderIds.has(String(item.vendorOrderId))
+  );
+
+  if (!orderItem) {
+    return res.status(403).json({ message: "You can review only after receiving this product" });
+  }
+
   try {
     const review = await Review.create({
       customerUserId: req.user._id,
       productId: product._id,
       vendorId: product.vendorId,
-      orderId: oi.orderId,
-      orderItemId: oi._id,
+      orderId: orderItem.orderId,
+      orderItemId: orderItem._id,
       rating: body.rating,
       title: body.title || "",
       comment: body.comment || "",
-      status: "pending",
+      status: "approved",
     });
 
     res.status(201).json({ review });
   } catch (e) {
-    // duplicate review
     if (String(e.code) === "11000") {
       return res.status(400).json({ message: "You already reviewed this product" });
     }
@@ -66,19 +88,36 @@ const createVendorReviewSchema = z.object({
 async function createVendorReview(req, res) {
   const body = createVendorReviewSchema.parse(req.body);
 
-  // Verify purchase from this vendor: must have any VendorOrder for this vendor (ideally delivered)
-  const vo = await VendorOrder.findOne({ vendorId: body.vendorId, status: "delivered" }).sort({ createdAt: -1 }).lean();
-  if (!vo) return res.status(403).json({ message: "You can review only after receiving an order from this vendor" });
+  const candidateVendorOrders = await VendorOrder.find({
+    vendorId: body.vendorId,
+    status: "delivered",
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const deliveredOrderIds = candidateVendorOrders.map((item) => item.orderId).filter(Boolean);
+  const ownedOrders = await Order.find({
+    _id: { $in: deliveredOrderIds },
+    customerUserId: req.user._id,
+  })
+    .select("_id")
+    .lean();
+  const ownedOrderIds = new Set(ownedOrders.map((item) => String(item._id)));
+
+  const vendorOrder = candidateVendorOrders.find((item) => ownedOrderIds.has(String(item.orderId)));
+  if (!vendorOrder) {
+    return res.status(403).json({ message: "You can review only after receiving an order from this vendor" });
+  }
 
   try {
     const review = await Review.create({
       customerUserId: req.user._id,
       vendorId: body.vendorId,
-      orderId: vo.orderId,
+      orderId: vendorOrder.orderId,
       rating: body.rating,
       title: body.title || "",
       comment: body.comment || "",
-      status: "pending",
+      status: "approved",
     });
 
     res.status(201).json({ review });
@@ -90,7 +129,16 @@ async function createVendorReview(req, res) {
   }
 }
 
-// Public list product reviews (approved only)
+function enrichCustomerName(item) {
+  const firstName = String(item?.customerUserId?.firstName || "").trim();
+  const lastName = String(item?.customerUserId?.lastName || "").trim();
+  const customerName = [firstName, lastName].filter(Boolean).join(" ").trim() || "Verified buyer";
+  return {
+    ...item,
+    customerName,
+  };
+}
+
 async function listProductReviews(req, res) {
   const productId = req.params.productId;
   const page = Math.max(parseInt(req.query.page || "1", 10), 1);
@@ -98,14 +146,24 @@ async function listProductReviews(req, res) {
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([
-    Review.find({ productId, status: "approved" }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Review.find({ productId, status: "approved" })
+      .populate("customerUserId", "firstName lastName")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     Review.countDocuments({ productId, status: "approved" }),
   ]);
 
-  res.json({ page, limit, total, pages: Math.ceil(total / limit), items });
+  res.json({
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    items: items.map(enrichCustomerName),
+  });
 }
 
-// Public list vendor reviews (approved only)
 async function listVendorReviews(req, res) {
   const vendorId = req.params.vendorId;
   const page = Math.max(parseInt(req.query.page || "1", 10), 1);
@@ -113,11 +171,22 @@ async function listVendorReviews(req, res) {
   const skip = (page - 1) * limit;
 
   const [items, total] = await Promise.all([
-    Review.find({ vendorId, status: "approved" }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Review.find({ vendorId, status: "approved" })
+      .populate("customerUserId", "firstName lastName")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     Review.countDocuments({ vendorId, status: "approved" }),
   ]);
 
-  res.json({ page, limit, total, pages: Math.ceil(total / limit), items });
+  res.json({
+    page,
+    limit,
+    total,
+    pages: Math.ceil(total / limit),
+    items: items.map(enrichCustomerName),
+  });
 }
 
 module.exports = {

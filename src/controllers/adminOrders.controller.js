@@ -1,5 +1,6 @@
 const { notifyUser, notifyVendorOwner } = require("../services/notification.service");
 const { z } = require("zod");
+const Stripe = require("stripe");
 const Order = require("../models/Order");
 const VendorOrder = require("../models/VendorOrder");
 const OrderItem = require("../models/OrderItem");
@@ -166,6 +167,16 @@ const schedulePickupSchema = z.object({
 const cancelSchema = z.object({
   note: z.string().optional().default("Cancelled by admin"),
 });
+
+const refundSchema = z.object({
+  note: z.string().optional(),
+});
+
+function getStripeClient() {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  if (!secretKey) return null;
+  return new Stripe(secretKey);
+}
 
 async function adminSchedulePickup(req, res) {
   const vendorOrderId = req.params.vendorOrderId;
@@ -515,6 +526,87 @@ async function adminCancelOrder(req, res) {
   res.json({ order });
 }
 
+async function adminMarkOrderRefunded(req, res) {
+  const orderId = req.params.orderId;
+  const body = refundSchema.parse(req.body || {});
+
+  const order = await Order.findById(orderId);
+  if (!order) return res.status(404).json({ message: "Order not found" });
+
+  if (order.status !== "cancelled") {
+    return res.status(400).json({ message: "Only cancelled orders can be marked refunded" });
+  }
+
+  if (order.paymentStatus === "refunded") {
+    return res.status(400).json({ message: "Order is already refunded" });
+  }
+
+  if (order.paymentStatus !== "paid") {
+    return res.status(400).json({ message: "Only paid orders can be marked refunded" });
+  }
+
+  if (order.paymentMethod === "online") {
+    const stripe = getStripeClient();
+    if (!stripe) {
+      return res.status(500).json({ message: "Stripe is not configured for automatic refunds" });
+    }
+
+    const chargeId = order?.paymentGateway?.chargeId;
+    const paymentIntentId = order?.paymentGateway?.paymentIntentId;
+    if (!chargeId && !paymentIntentId) {
+      return res.status(400).json({ message: "No Stripe payment reference found for this order" });
+    }
+
+    const refund = await stripe.refunds.create({
+      ...(chargeId ? { charge: chargeId } : { payment_intent: paymentIntentId }),
+      reason: "requested_by_customer",
+      metadata: {
+        orderId: String(order._id),
+        orderNumber: String(order.orderNumber || ""),
+      },
+    });
+
+    order.paymentGateway = {
+      ...(order.paymentGateway || {}),
+      latestStatus: refund.status || "refunded",
+      lastEventAt: new Date(),
+    };
+  }
+
+  order.paymentStatus = "refunded";
+  order.refundRequest = {
+    ...(order.refundRequest || {}),
+    status: "refunded",
+    processedAt: new Date(),
+    processedByAdminId: req.user._id,
+    adminNote: body.note || order.refundRequest?.adminNote || "",
+  };
+  await order.save();
+
+  await VendorOrder.updateMany(
+    { orderId: order._id },
+    { $set: { paymentStatus: "refunded" } }
+  );
+
+  await AuditLog.create({
+    actorUserId: req.user._id,
+    action: "ORDER_REFUNDED",
+    entityType: "Order",
+    entityId: order._id,
+    meta: { note: body.note || "", paymentMethod: order.paymentMethod, refundStatus: order.refundRequest?.status },
+  });
+
+  await notifyUser({
+    userId: order.customerUserId,
+    title: "Refund completed",
+    body: `Your refund for order ${order.orderNumber} has been completed.`,
+    type: "order",
+    data: { orderId: order._id, paymentStatus: order.paymentStatus, refundStatus: order.refundRequest?.status },
+  });
+
+  res.json({ order });
+}
+
 module.exports = {
   adminListOrders,
   adminGetOrderDetail,
@@ -530,4 +622,5 @@ module.exports = {
   adminFulfillmentQueue,
   adminCancelVendorOrder,
   adminCancelOrder,
+  adminMarkOrderRefunded,
 };

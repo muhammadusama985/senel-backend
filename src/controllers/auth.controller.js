@@ -99,6 +99,29 @@ const verifyLoginOtpSchema = z.object({
   otp: z.string().min(6).max(6),
 });
 
+const optionalText = (max) => z.string().max(max).optional();
+const optionalPhone = (max, min) =>
+  z
+    .string()
+    .max(max)
+    .optional()
+    .refine((value) => value === undefined || value === "" || value.length >= min, {
+      message: `Must be at least ${min} characters`,
+    });
+
+const updateMeSchema = z.object({
+  firstName: optionalText(80),
+  lastName: optionalText(80),
+  phone: optionalPhone(40, 7),
+  companyName: optionalText(160),
+  taxId: optionalText(80),
+  country: optionalText(80),
+  city: optionalText(80),
+  addressLine: optionalText(250),
+  contactPhone: optionalPhone(40, 5),
+  preferredLanguage: z.enum(["en", "de", "tr"]).optional(),
+});
+
 async function login(req, res) {
   const body = loginSchema.parse(req.body);
 
@@ -186,4 +209,40 @@ async function verifyLoginOtp(req, res) {
   });
 }
 
-module.exports = { register, login, requestLoginOtp, verifyLoginOtp };
+async function updateMe(req, res) {
+  const body = updateMeSchema.parse(req.body);
+
+  const fields = [
+    "firstName",
+    "lastName",
+    "phone",
+    "companyName",
+    "taxId",
+    "country",
+    "city",
+    "addressLine",
+    "contactPhone",
+    "preferredLanguage",
+  ];
+
+  for (const field of fields) {
+    if (body[field] !== undefined) {
+      req.user[field] = typeof body[field] === "string" ? body[field].trim() : body[field];
+    }
+  }
+
+  if (body.phone !== undefined) {
+    const existing = await User.findOne({
+      _id: { $ne: req.user._id },
+      phone: body.phone.trim(),
+    }).lean();
+    if (existing) {
+      return res.status(409).json({ message: "Phone number is already in use" });
+    }
+  }
+
+  await req.user.save();
+  return res.json({ user: toSafeUser(req.user) });
+}
+
+module.exports = { register, login, requestLoginOtp, verifyLoginOtp, updateMe };

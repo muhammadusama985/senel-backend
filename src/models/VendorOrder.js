@@ -26,7 +26,7 @@ const vendorOrderSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
-      enum: ["unpaid", "awaiting_transfer", "under_review", "paid", "rejected"],
+      enum: ["unpaid", "awaiting_transfer", "under_review", "paid", "rejected", "refunded"],
       default: "unpaid",
       index: true,
     },

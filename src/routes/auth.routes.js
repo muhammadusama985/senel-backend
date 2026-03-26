@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const { asyncHandler } = require("../utils/asyncHandler");
-const { register, login, requestLoginOtp, verifyLoginOtp } = require("../controllers/auth.controller");
+const { register, login, requestLoginOtp, verifyLoginOtp, updateMe } = require("../controllers/auth.controller");
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requireRole } = require("../middlewares/role.middleware");
 
@@ -32,6 +32,7 @@ router.post("/login/verify-otp", asyncHandler(verifyLoginOtp));
 
 // Example protected routes (sanity check)
 router.get("/me", requireAuth, (req, res) => res.json({ user: toSafeUser(req.user) }));
+router.patch("/me", requireAuth, asyncHandler(updateMe));
 router.get("/admin-only", requireAuth, requireRole("admin"), (req, res) => res.json({ ok: true }));
 
 module.exports = router;

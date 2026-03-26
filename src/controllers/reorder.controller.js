@@ -3,6 +3,8 @@ const Order = require("../models/Order");
 const OrderItem = require("../models/OrderItem");
 const Product = require("../models/Product");
 const Cart = require("../models/Cart");
+const Vendor = require("../models/Vendor");
+const { getTierPrice } = require("../utils/pricing");
 
 const schema = z.object({ orderId: z.string().min(1), mode: z.enum(["merge", "replace"]).optional() });
 
@@ -27,27 +29,74 @@ async function reorder(req, res) {
     cart.appliedCoupon = { code: "", couponId: null, scope: "", vendorId: null, discountType: "", value: 0, discountTotal: 0 };
   }
 
-  // Add each item (skip products no longer approved)
+  const unavailableItems = [];
+
   for (const oi of items) {
     const p = await Product.findById(oi.productId).lean();
-    if (!p || p.status !== "approved") continue;
+    if (!p || p.status !== "approved") {
+      unavailableItems.push({ productId: oi.productId, reason: "Product not available" });
+      continue;
+    }
 
-    const existing = cart.items.find((x) => String(x.productId) === String(p._id));
-    const qty = oi.qty;
+    const vendor = await Vendor.findById(p.vendorId).lean();
+    if (vendor && vendor.status !== "approved") {
+      unavailableItems.push({ productId: oi.productId, reason: "Vendor not available" });
+      continue;
+    }
+
+    const variantSku = p.hasVariants ? (oi.variantSku || "") : "";
+    if (p.hasVariants && !variantSku) {
+      unavailableItems.push({ productId: oi.productId, reason: "Variant selection required" });
+      continue;
+    }
+
+    const availableStock = p.hasVariants
+      ? Number((p.variants || []).find((variant) => variant.sku === variantSku)?.stockQty || 0)
+      : Number(p.stockQty || 0);
+    if (availableStock <= 0) {
+      unavailableItems.push({ productId: oi.productId, reason: "Out of stock" });
+      continue;
+    }
+
+    const qty = Math.min(Number(oi.qty || 0), availableStock);
+    if (qty < Number(p.moq || 1)) {
+      unavailableItems.push({ productId: oi.productId, reason: "MOQ cannot be met with current stock" });
+      continue;
+    }
+
+    const tier = getTierPrice(p.priceTiers, qty);
+    if (!tier) {
+      unavailableItems.push({ productId: oi.productId, reason: "Pricing is unavailable" });
+      continue;
+    }
+
+    const existing = cart.items.find(
+      (x) => String(x.productId) === String(p._id) && String(x.variantSku || "") === variantSku
+    );
 
     if (existing) {
       existing.qty += qty;
-      existing.unitPrice = p.price;
+      const updatedTier = getTierPrice(p.priceTiers, existing.qty);
+      existing.unitPrice = Number(updatedTier?.unitPrice || tier.unitPrice);
+      existing.currency = p.currency || "EUR";
+      existing.tierMinQtyApplied = Number(updatedTier?.minQty || tier.minQty);
+      existing.moq = Number(p.moq || 1);
+      existing.variantSku = variantSku;
       existing.lineTotal = Number((existing.qty * existing.unitPrice).toFixed(2));
     } else {
       cart.items.push({
         productId: p._id,
         vendorId: p.vendorId,
-        sku: p.sku || "",
+        variantSku,
+        variantAttributes: oi.variantAttributes || {},
         title: p.title,
-        unitPrice: p.price,
+        imageUrl: oi.imageUrl || (p.imageUrls?.[0] || ""),
+        moq: Number(p.moq || 1),
+        unitPrice: Number(tier.unitPrice),
+        currency: p.currency || "EUR",
+        tierMinQtyApplied: Number(tier.minQty),
         qty,
-        lineTotal: Number((qty * p.price).toFixed(2)),
+        lineTotal: Number((qty * Number(tier.unitPrice)).toFixed(2)),
       });
     }
   }
@@ -62,7 +111,7 @@ async function reorder(req, res) {
   cart.grandTotal = cart.subtotal;
 
   await cart.save();
-  res.json({ cart });
+  res.json({ cart, unavailableItems });
 }
 
 module.exports = { reorder };

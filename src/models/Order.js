@@ -74,6 +74,25 @@ const orderSchema = new mongoose.Schema(
       lastEventAt: { type: Date, default: null },
     },
 
+    refundRequest: {
+      status: {
+        type: String,
+        enum: ["none", "requested", "refunded", "rejected"],
+        default: "none",
+      },
+      accountHolderName: { type: String, default: "" },
+      bankName: { type: String, default: "" },
+      accountNumber: { type: String, default: "" },
+      iban: { type: String, default: "" },
+      swiftCode: { type: String, default: "" },
+      country: { type: String, default: "" },
+      notes: { type: String, default: "" },
+      requestedAt: { type: Date, default: null },
+      processedAt: { type: Date, default: null },
+      processedByAdminId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      adminNote: { type: String, default: "" },
+    },
+
     status: { type: String, enum: ORDER_STATUS, default: "placed", index: true },
 
     // Helpful identifier

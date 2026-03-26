@@ -18,6 +18,7 @@ const {
   adminFulfillmentQueue,
   adminCancelVendorOrder,
   adminCancelOrder,
+  adminMarkOrderRefunded,
 } = require("../controllers/adminOrders.controller");
 
 // Import shop controller for search reindex
@@ -30,6 +31,7 @@ router.use(requireAuth, requireRole("admin"));
 router.get("/orders", asyncHandler(adminListOrders));
 router.get("/orders/:orderId", asyncHandler(adminGetOrderDetail));
 router.post("/orders/:orderId/cancel", asyncHandler(adminCancelOrder));
+router.post("/orders/:orderId/mark-refunded", asyncHandler(adminMarkOrderRefunded));
 
 // Search reindex endpoint
 router.post("/search/reindex", asyncHandler(reindexSearch));
