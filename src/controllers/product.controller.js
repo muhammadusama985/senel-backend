@@ -97,6 +97,10 @@ const featureSchema = z.object({
   isFeatured: z.boolean(),
 });
 
+const hotRequestSchema = z.object({
+  note: z.string().max(500).optional().default(""),
+});
+
 async function getMyVendorOrThrow(userId) {
   const vendor = await Vendor.findOne({ ownerUserId: userId });
   if (!vendor) {
@@ -566,6 +570,39 @@ async function vendorSubmitProduct(req, res) {
   res.json({ product: localizeProduct(product.toObject(), req.lang) });
 }
 
+async function vendorRequestHotProduct(req, res) {
+  const vendor = await getMyVendorOrThrow(req.user._id);
+  const body = hotRequestSchema.parse(req.body || {});
+
+  const product = await Product.findOne({ _id: req.params.productId, vendorId: vendor._id });
+  if (!product) return res.status(404).json({ message: "Product not found" });
+
+  if (product.status !== "approved") {
+    return res.status(400).json({ message: "Only approved products can be requested for hot products" });
+  }
+
+  if (product.isFeatured) {
+    return res.status(400).json({ message: "This product is already in hot products" });
+  }
+
+  product.hotRequestStatus = "pending";
+  product.hotRequestNote = body.note || "";
+  product.hotRequestedAt = new Date();
+  product.hotReviewedAt = null;
+  product.hotReviewedByAdminId = null;
+  await product.save();
+
+  await AuditLog.create({
+    actorUserId: req.user._id,
+    action: "PRODUCT_HOT_REQUESTED",
+    entityType: "Product",
+    entityId: product._id,
+    meta: { vendorId: vendor._id, note: product.hotRequestNote },
+  });
+
+  res.json({ product: localizeProduct(product.toObject(), req.lang) });
+}
+
 async function adminCreateProduct(req, res) {
   const body = adminCreateProductSchema.parse(req.body);
   const vendor = await resolveAdminTargetVendor(body.vendorId);
@@ -910,6 +947,13 @@ async function adminSetFeatured(req, res) {
   if (!product) return res.status(404).json({ message: "Product not found" });
 
   product.isFeatured = body.isFeatured;
+  product.hotRequestStatus = body.isFeatured ? "approved" : "none";
+  product.hotReviewedAt = new Date();
+  product.hotReviewedByAdminId = req.user._id;
+  if (!body.isFeatured) {
+    product.hotRequestNote = "";
+    product.hotRequestedAt = null;
+  }
   await product.save();
 
   await AuditLog.create({
@@ -923,6 +967,31 @@ async function adminSetFeatured(req, res) {
   res.json({ product: localizeProduct(product.toObject(), req.lang) });
 }
 
+async function adminRejectHotRequest(req, res) {
+  const productId = req.params.productId;
+  const body = hotRequestSchema.parse(req.body || {});
+
+  const product = await Product.findById(productId);
+  if (!product) return res.status(404).json({ message: "Product not found" });
+
+  product.isFeatured = false;
+  product.hotRequestStatus = "rejected";
+  product.hotRequestNote = body.note || "";
+  product.hotReviewedAt = new Date();
+  product.hotReviewedByAdminId = req.user._id;
+  await product.save();
+
+  await AuditLog.create({
+    actorUserId: req.user._id,
+    action: "PRODUCT_HOT_REQUEST_REJECTED",
+    entityType: "Product",
+    entityId: product._id,
+    meta: { note: product.hotRequestNote },
+  });
+
+  res.json({ product: localizeProduct(product.toObject(), req.lang) });
+}
+
 module.exports = {
   vendorCreateProduct,
   vendorListMyProducts,
@@ -930,6 +999,7 @@ module.exports = {
   vendorUpdateMyProduct,
   vendorDeleteMyProduct,
   vendorSubmitProduct,
+  vendorRequestHotProduct,
   adminCreateProduct,
   adminListProducts,
   adminArchiveProduct,
@@ -940,4 +1010,5 @@ module.exports = {
   adminApproveProduct,
   adminRejectProduct,
   adminSetFeatured,
+  adminRejectHotRequest,
 };

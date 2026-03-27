@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const PRODUCT_STATUS = ["draft", "submitted", "approved", "rejected", "blocked", "archived"];
+const HOT_REQUEST_STATUS = ["none", "pending", "approved", "rejected"];
 
 const priceTierSchema = new mongoose.Schema(
   {
@@ -64,6 +65,11 @@ const productSchema = new mongoose.Schema(
     // Product lifecycle & admin controls
     status: { type: String, enum: PRODUCT_STATUS, default: "draft", index: true },
     isFeatured: { type: Boolean, default: false, index: true },
+    hotRequestStatus: { type: String, enum: HOT_REQUEST_STATUS, default: "none", index: true },
+    hotRequestNote: { type: String, default: "" },
+    hotRequestedAt: { type: Date, default: null },
+    hotReviewedAt: { type: Date, default: null },
+    hotReviewedByAdminId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
 
     reviewedByAdminId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     reviewedAt: { type: Date },

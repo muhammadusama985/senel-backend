@@ -12,6 +12,7 @@ const {
   vendorUpdateMyProduct,
   vendorDeleteMyProduct,
   vendorSubmitProduct,
+  vendorRequestHotProduct,
   adminCreateProduct,
   adminListProducts,
   adminUpdateProduct,
@@ -22,6 +23,7 @@ const {
   adminApproveProduct,
   adminRejectProduct,
   adminSetFeatured,
+  adminRejectHotRequest,
 } = require("../controllers/product.controller");
 
 // Vendor routes
@@ -31,6 +33,7 @@ router.get("/me/:productId", requireAuth, requireRole("vendor"), asyncHandler(ve
 router.patch("/me/:productId", requireAuth, requireRole("vendor"), asyncHandler(vendorUpdateMyProduct));
 router.delete("/me/:productId", requireAuth, requireRole("vendor"), asyncHandler(vendorDeleteMyProduct));
 router.post("/me/:productId/submit", requireAuth, requireRole("vendor"), asyncHandler(vendorSubmitProduct));
+router.post("/me/:productId/hot-request", requireAuth, requireRole("vendor"), asyncHandler(vendorRequestHotProduct));
 
 
 router.post(
@@ -72,5 +75,6 @@ router.post("/admin/products/:productId/approve", requireAuth, requireRole("admi
 router.post("/admin/products/:productId/reject", requireAuth, requireRole("admin"), asyncHandler(adminRejectProduct));
 router.post("/admin/products/:productId/archive", requireAuth, requireRole("admin"), asyncHandler(adminArchiveProduct));
 router.post("/admin/products/:productId/feature", requireAuth, requireRole("admin"), asyncHandler(adminSetFeatured));
+router.post("/admin/products/:productId/hot-request/reject", requireAuth, requireRole("admin"), asyncHandler(adminRejectHotRequest));
 
 module.exports = router;
