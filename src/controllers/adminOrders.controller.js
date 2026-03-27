@@ -65,7 +65,32 @@ async function adminListOrders(req, res) {
     Order.countDocuments(query),
   ]);
 
-  res.json({ page, limit, total, pages: Math.ceil(total / limit), items });
+  const orderIds = items.map((item) => item._id);
+  const vendorOrders = orderIds.length
+    ? await VendorOrder.find({ orderId: { $in: orderIds } })
+        .select({ orderId: 1, status: 1 })
+        .lean()
+    : [];
+
+  const vendorOrdersByOrderId = vendorOrders.reduce((acc, item) => {
+    const key = String(item.orderId);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  const enrichedItems = items.map((item) => {
+    const splits = vendorOrdersByOrderId[String(item._id)] || [];
+    const allVendorOrdersDelivered =
+      splits.length > 0 && splits.every((split) => split.status === "delivered");
+
+    return {
+      ...item,
+      allVendorOrdersDelivered,
+    };
+  });
+
+  res.json({ page, limit, total, pages: Math.ceil(total / limit), items: enrichedItems });
 }
 
 /**
