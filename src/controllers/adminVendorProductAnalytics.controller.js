@@ -36,14 +36,6 @@ function parseRange(query) {
   return { start, end, limit };
 }
 
-function buildDeliveredVendorOrderMatch(start, end) {
-  const match = { status: "delivered" };
-  if (start && end) {
-    match.deliveredAt = { $gte: start, $lte: end };
-  }
-  return match;
-}
-
 /**
  * GET /api/v1/admin/analytics/vendors/top?days=30&metric=gmv
  * metric = gmv | delivered | orders
@@ -223,19 +215,11 @@ async function adminTopProducts(req, res) {
   const { start, end, limit } = parseRange(req.query);
   const metric = String(req.query.metric || "qty");
 
-  const deliveredMatch = buildDeliveredVendorOrderMatch(start, end);
+  const match = {};
+  if (start && end) match.createdAt = { $gte: start, $lte: end };
 
   const agg = await OrderItem.aggregate([
-    {
-      $lookup: {
-        from: "vendororders",
-        localField: "vendorOrderId",
-        foreignField: "_id",
-        as: "vendorOrder",
-      },
-    },
-    { $unwind: "$vendorOrder" },
-    { $match: { "vendorOrder.status": "delivered", ...(start && end ? { "vendorOrder.deliveredAt": { $gte: start, $lte: end } } : {}) } },
+    { $match: match },
     {
       $group: {
         _id: "$productId",
@@ -307,17 +291,11 @@ async function adminTopProducts(req, res) {
 async function adminTopCategories(req, res) {
   const { start, end, limit } = parseRange(req.query);
 
+  const match = {};
+  if (start && end) match.createdAt = { $gte: start, $lte: end };
+
   const agg = await OrderItem.aggregate([
-    {
-      $lookup: {
-        from: "vendororders",
-        localField: "vendorOrderId",
-        foreignField: "_id",
-        as: "vendorOrder",
-      },
-    },
-    { $unwind: "$vendorOrder" },
-    { $match: { "vendorOrder.status": "delivered", ...(start && end ? { "vendorOrder.deliveredAt": { $gte: start, $lte: end } } : {}) } },
+    { $match: match },
     {
       $lookup: {
         from: "products",
@@ -370,20 +348,14 @@ async function adminTopCategories(req, res) {
 async function adminCountryDemand(req, res) {
   const { start, end, limit } = parseRange(req.query);
 
-  const items = await VendorOrder.aggregate([
-    { $match: buildDeliveredVendorOrderMatch(start, end) },
-    {
-      $lookup: {
-        from: "orders",
-        localField: "orderId",
-        foreignField: "_id",
-        as: "order",
-      },
-    },
-    { $unwind: { path: "$order", preserveNullAndEmptyArrays: true } },
+  const match = {};
+  if (start && end) match.createdAt = { $gte: start, $lte: end };
+
+  const items = await Order.aggregate([
+    { $match: match },
     {
       $group: {
-        _id: { $ifNull: ["$order.shippingAddress.country", "Unknown"] },
+        _id: { $ifNull: ["$shippingAddress.country", "Unknown"] },
         orders: { $sum: 1 },
         revenue: { $sum: "$grandTotal" },
         subtotal: { $sum: "$subtotal" },
