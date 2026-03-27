@@ -384,17 +384,22 @@ async function adminCountryDemand(req, res) {
 async function adminLowStockProducts(req, res) {
   const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
 
-  const items = await Product.find({
+  const query = {
     trackInventory: true,
     lowStockActive: true,
-  })
-    .populate("vendorId", "storeName storeSlug")
-    .populate("categoryId", "name")
-    .sort({ updatedAt: -1 })
-    .limit(limit)
-    .lean();
+  };
 
-  res.json({ items });
+  const [items, total] = await Promise.all([
+    Product.find(query)
+      .populate("vendorId", "storeName storeSlug")
+      .populate("categoryId", "name")
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean(),
+    Product.countDocuments(query),
+  ]);
+
+  res.json({ items, total });
 }
 
 module.exports = {

@@ -11,15 +11,20 @@ const updateSchema = z.object({
 async function listLowStock(req, res) {
   const vendorId = req.vendorContext.vendorId;
 
-  const items = await Product.find({
+  const query = {
     vendorId,
     trackInventory: true,
     lowStockActive: true,
-  })
-    .sort({ updatedAt: -1 })
-    .lean();
+  };
 
-  res.json({ items });
+  const [items, total] = await Promise.all([
+    Product.find(query)
+      .sort({ updatedAt: -1 })
+      .lean(),
+    Product.countDocuments(query),
+  ]);
+
+  res.json({ items, total });
 }
 
 async function updateProductInventory(req, res) {
