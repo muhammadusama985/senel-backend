@@ -4,6 +4,7 @@ const Coupon = require("../models/Coupon");
 const CouponRedemption = require("../models/CouponRedemption");
 const Order = require("../models/Order");
 const VendorOrder = require("../models/VendorOrder");
+const Vendor = require("../models/Vendor");
 
 function parseRange(query) {
   // supports: days=7 or start/end ISO
@@ -230,8 +231,91 @@ async function adminOrdersOverview(req, res) {
     },
   ]);
 
+  const summaryMatch = {};
+  if (start && end) summaryMatch.createdAt = { $gte: start, $lte: end };
+
+  const deliveredMatch = { status: "delivered" };
+  if (start && end) deliveredMatch.deliveredAt = { $gte: start, $lte: end };
+
+  const [totalMarketplaceOrders, deliveredSummaryAgg, deliveredByFulfillment, activeVendors, dailyDelivered] = await Promise.all([
+    VendorOrder.countDocuments(summaryMatch),
+    VendorOrder.aggregate([
+      { $match: deliveredMatch },
+      {
+        $group: {
+          _id: null,
+          totalDeliveredOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$grandTotal" },
+        },
+      },
+    ]),
+    VendorOrder.aggregate([
+      { $match: deliveredMatch },
+      {
+        $group: {
+          _id: "$fulfillmentOwner",
+          count: { $sum: 1 },
+        },
+      },
+    ]),
+    Vendor.countDocuments({ status: "approved" }),
+    VendorOrder.aggregate([
+      { $match: deliveredMatch },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$deliveredAt" },
+            month: { $month: "$deliveredAt" },
+            day: { $dayOfMonth: "$deliveredAt" },
+          },
+          revenue: { $sum: "$grandTotal" },
+          orders: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
+    ]),
+  ]);
+
+  const deliveredTotals = deliveredSummaryAgg[0] || {
+    totalDeliveredOrders: 0,
+    totalRevenue: 0,
+  };
+
+  const deliveredSummary = deliveredByFulfillment.reduce(
+    (acc, item) => {
+      if (item._id === "admin") acc.adminFulfilledDelivered = item.count;
+      else acc.vendorFulfilledDelivered = item.count;
+      return acc;
+    },
+    {
+      adminFulfilledDelivered: 0,
+      vendorFulfilledDelivered: 0,
+    }
+  );
+
+  const averageOrderValue =
+    deliveredTotals.totalDeliveredOrders > 0
+      ? deliveredTotals.totalRevenue / deliveredTotals.totalDeliveredOrders
+      : 0;
+
+  const daily = dailyDelivered.map((item) => ({
+    date: `${item._id.year}-${String(item._id.month).padStart(2, "0")}-${String(item._id.day).padStart(2, "0")}`,
+    revenue: item.revenue,
+    orders: item.orders,
+  }));
+
   res.json({
     range: start && end ? { start, end } : null,
+    summary: {
+      totalMarketplaceOrders,
+      totalOrders: totalMarketplaceOrders,
+      totalDeliveredOrders: deliveredTotals.totalDeliveredOrders,
+      totalRevenue: deliveredTotals.totalRevenue,
+      averageOrderValue,
+      activeVendors,
+      ...deliveredSummary,
+    },
+    daily,
     ordersByStatus: orderStats,
     vendorOrdersByStatus: vendorOrderStats,
   });
