@@ -188,7 +188,7 @@ function normalizeInventoryPayload(body, currentProduct = null) {
   if (hasVariants) {
     return {
       hasVariants: true,
-      stockQty: 0,
+      stockQty: body.stockQty ?? currentProduct?.stockQty ?? 0,
       variants: body.variants ?? currentProduct?.variants ?? [],
     };
   }
@@ -376,7 +376,10 @@ async function vendorCreateProduct(req, res) {
     priceTiers: normalizedTiers,
     hasVariants: inventory.hasVariants,
     stockQty: inventory.stockQty,
-    variants: normalizedVariants,
+    variants: normalizedVariants.map((variant) => ({
+      ...variant,
+      stockQty: inventory.stockQty,
+    })),
     imageUrls: body.imageUrls ?? [],
     trackInventory: body.trackInventory ?? true,
     lowStockThreshold: body.lowStockThreshold ?? 5,
@@ -492,7 +495,12 @@ async function vendorUpdateMyProduct(req, res) {
     const inventory = normalizeInventoryPayload(body, product);
     product.hasVariants = inventory.hasVariants;
     product.stockQty = inventory.stockQty;
-    product.variants = inventory.hasVariants ? normalizeVariants(inventory.variants, product.title) : [];
+    product.variants = inventory.hasVariants
+      ? normalizeVariants(inventory.variants, product.title).map((variant) => ({
+          ...variant,
+          stockQty: inventory.stockQty,
+        }))
+      : [];
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
@@ -562,7 +570,10 @@ async function vendorSubmitProduct(req, res) {
   }
   if (product.hasVariants) {
     try {
-      product.variants = normalizeVariants(product.variants, product.title);
+      product.variants = normalizeVariants(product.variants, product.title).map((variant) => ({
+        ...variant,
+        stockQty: product.stockQty,
+      }));
     } catch (error) {
       return res.status(error.statusCode || 400).json({ message: error.message });
     }
@@ -648,7 +659,10 @@ async function adminCreateProduct(req, res) {
     priceTiers: normalizedTiers,
     hasVariants: inventory.hasVariants,
     stockQty: inventory.stockQty,
-    variants: normalizedVariants,
+    variants: normalizedVariants.map((variant) => ({
+      ...variant,
+      stockQty: inventory.stockQty,
+    })),
     imageUrls: body.imageUrls ?? [],
     trackInventory: body.trackInventory ?? true,
     lowStockThreshold: body.lowStockThreshold ?? 5,
@@ -804,7 +818,12 @@ async function adminUpdateProduct(req, res) {
     const inventory = normalizeInventoryPayload(body, product);
     product.hasVariants = inventory.hasVariants;
     product.stockQty = inventory.stockQty;
-    product.variants = inventory.hasVariants ? normalizeVariants(inventory.variants, product.title) : [];
+    product.variants = inventory.hasVariants
+      ? normalizeVariants(inventory.variants, product.title).map((variant) => ({
+          ...variant,
+          stockQty: inventory.stockQty,
+        }))
+      : [];
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;

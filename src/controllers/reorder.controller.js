@@ -51,7 +51,7 @@ async function reorder(req, res) {
     }
 
     const availableStock = p.hasVariants
-      ? Number((p.variants || []).find((variant) => variant.sku === variantSku)?.stockQty || 0)
+      ? ((p.variants || []).some((variant) => variant.sku === variantSku) ? Number(p.stockQty || 0) : 0)
       : Number(p.stockQty || 0);
     if (availableStock <= 0) {
       unavailableItems.push({ productId: oi.productId, reason: "Out of stock" });

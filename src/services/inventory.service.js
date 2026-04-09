@@ -11,36 +11,34 @@ async function adjustStock({ productId, variantSku, delta, reason = "", session 
   // If product not tracked or not found, skip
   if (!product) return null;
 
-  let alertContext = {};
-
-  if (product.hasVariants) {
+  if (product.hasVariants && variantSku) {
     const variant = (product.variants || []).find((item) => item.sku === variantSku);
     if (!variant) {
       const err = new Error(`Variant ${variantSku || ""} not found for product ${productId}`);
       err.statusCode = 400;
       throw err;
     }
+  }
 
-    variant.stockQty = Number(variant.stockQty || 0) + Number(delta || 0);
-    if (variant.stockQty < 0) {
-      variant.stockQty = 0;
-    }
+  product.stockQty = Number(product.stockQty || 0) + Number(delta || 0);
+  if (product.stockQty < 0) {
+    product.stockQty = 0;
+  }
 
-    alertContext = {
-      qtyOverride: variant.stockQty,
-      sku: variant.sku,
-    };
-  } else {
-    product.stockQty = Number(product.stockQty || 0) + Number(delta || 0);
-    if (product.stockQty < 0) {
-      product.stockQty = 0;
-    }
+  if (product.hasVariants && Array.isArray(product.variants)) {
+    product.variants = product.variants.map((variant) => ({
+      ...(typeof variant.toObject === "function" ? variant.toObject() : variant),
+      stockQty: product.stockQty,
+    }));
   }
 
   await product.save({ session });
 
   // 3) Low stock state machine
-  await checkLowStockAndNotify(product, session, reason, alertContext);
+  await checkLowStockAndNotify(product, session, reason, {
+    qtyOverride: product.stockQty,
+    sku: variantSku || product.sku || "",
+  });
 
   return product;
 }
