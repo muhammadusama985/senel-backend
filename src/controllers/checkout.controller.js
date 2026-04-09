@@ -62,6 +62,23 @@ function getVariantAttributes(product, variantSku) {
   return v?.attributes || {};
 }
 
+function normalizeSelectedVariantAttributes(product, variantSku, providedAttributes = {}) {
+  const baseAttributes = getVariantAttributes(product, variantSku);
+  const safeProvidedAttributes =
+    providedAttributes && typeof providedAttributes === "object"
+      ? Object.fromEntries(
+          Object.entries(providedAttributes).filter(
+            ([key, value]) => String(key || "").trim() && String(value || "").trim()
+          )
+        )
+      : {};
+
+  return {
+    ...baseAttributes,
+    ...safeProvidedAttributes,
+  };
+}
+
 function assertMOQ(product, qty) {
   if (qty < product.moq) {
     const err = new Error(`MOQ not met for ${product.title}. Minimum is ${product.moq}`);
@@ -211,6 +228,7 @@ async function checkout(req, res) {
         product,
         vendor,
         variantSku,
+        variantAttributes: normalizeSelectedVariantAttributes(product, variantSku, item.variantAttributes || {}),
         qty: item.qty,
         pricing,
       });
@@ -228,6 +246,7 @@ async function checkout(req, res) {
       vendorBuckets.get(key).items.push({
         product,
         variantSku,
+        variantAttributes: normalizeSelectedVariantAttributes(product, variantSku, item.variantAttributes || {}),
         qty: item.qty,
         pricing,
       });
@@ -450,7 +469,7 @@ async function checkout(req, res) {
           title: it.product.title,
           imageUrl: (it.product.imageUrls && it.product.imageUrls[0]) || "",
           variantSku: it.variantSku || "",
-          variantAttributes: getVariantAttributes(it.product, it.variantSku || ""),
+          variantAttributes: normalizeSelectedVariantAttributes(it.product, it.variantSku || "", it.variantAttributes || {}),
           qty: it.qty,
           unitPrice: it.pricing.unitPrice,
           currency: it.product.currency || orderCurrency,

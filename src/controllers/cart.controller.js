@@ -97,6 +97,23 @@ function getVariantAttributes(product, variantSku) {
   return variant?.attributes || {};
 }
 
+function normalizeSelectedVariantAttributes(product, variantSku, providedAttributes = {}) {
+  const baseAttributes = getVariantAttributes(product, variantSku);
+  const safeProvidedAttributes =
+    providedAttributes && typeof providedAttributes === "object"
+      ? Object.fromEntries(
+          Object.entries(providedAttributes).filter(
+            ([key, value]) => String(key || "").trim() && String(value || "").trim()
+          )
+        )
+      : {};
+
+  return {
+    ...baseAttributes,
+    ...safeProvidedAttributes,
+  };
+}
+
 function ensureVendorCanReceiveOrders(vendor) {
   if (!vendor) {
     const err = new Error("Vendor not found");
@@ -203,6 +220,7 @@ const addItemSchema = z.object({
   productId: z.string().min(1),
   qty: z.number().int().min(1),
   variantSku: z.string().optional(), // required if product.hasVariants
+  variantAttributes: z.record(z.string()).optional(),
 });
 
 async function addItem(req, res) {
@@ -276,14 +294,14 @@ async function addItem(req, res) {
     existing.title = product.title;
     existing.imageUrl = pickProductImage(product);
     existing.moq = product.moq;
-    existing.variantAttributes = getVariantAttributes(product, variantSku);
+    existing.variantAttributes = normalizeSelectedVariantAttributes(product, variantSku, body.variantAttributes);
     existing.requiresManualShipping = product.requiresManualShipping || false;
   } else {
     cart.items.push({
       productId: product._id,
       vendorId: product.vendorId,
       variantSku,
-      variantAttributes: getVariantAttributes(product, variantSku),
+      variantAttributes: normalizeSelectedVariantAttributes(product, variantSku, body.variantAttributes),
       qty: body.qty,
       moq: product.moq,
       unitPrice: pricing.unitPrice,
@@ -389,7 +407,7 @@ async function updateItemQty(req, res) {
   item.title = product.title;
   item.imageUrl = pickProductImage(product);
   item.vendorId = product.vendorId;
-  item.variantAttributes = getVariantAttributes(product, variantSku);
+  item.variantAttributes = normalizeSelectedVariantAttributes(product, variantSku, item.variantAttributes);
 
   computeCartTotals(cart);
   await recomputeCouponIfAny(cart);
