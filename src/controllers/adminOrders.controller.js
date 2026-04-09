@@ -7,6 +7,7 @@ const OrderItem = require("../models/OrderItem");
 const AuditLog = require("../models/AuditLog");
 const { applyTransaction } = require("../services/wallet.service");
 const { logEvent } = require("../services/analyticsEvents.service");
+const { adjustStock } = require("../services/inventory.service");
 
 const ADMIN_FULFILLMENT_TYPE = "admin";
 const VENDOR_FULFILLMENT_TYPE = "vendor";
@@ -201,6 +202,17 @@ function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) return null;
   return new Stripe(secretKey);
+}
+
+async function restockOrderItems(items, reason) {
+  for (const item of items) {
+    await adjustStock({
+      productId: item.productId,
+      variantSku: item.variantSku || "",
+      delta: Number(item.qty || 0),
+      reason,
+    });
+  }
 }
 
 async function adminSchedulePickup(req, res) {
@@ -507,6 +519,9 @@ async function adminCancelVendorOrder(req, res) {
     return res.status(400).json({ message: `Cannot cancel vendor order in status ${vo.status}` });
   }
 
+  const items = await OrderItem.find({ vendorOrderId: vo._id }).lean();
+  await restockOrderItems(items, "admin_vendor_order_cancelled");
+
   vo.status = "cancelled";
   await vo.save();
 
@@ -531,6 +546,18 @@ async function adminCancelOrder(req, res) {
   if (order.status === "cancelled") {
     return res.status(400).json({ message: "Order already cancelled" });
   }
+
+  const cancellableVendorOrders = await VendorOrder.find({
+    orderId: order._id,
+    status: { $nin: ["delivered", "cancelled"] },
+  }).select({ _id: 1 }).lean();
+
+  const cancellableVendorOrderIds = cancellableVendorOrders.map((item) => item._id);
+  const items = cancellableVendorOrderIds.length
+    ? await OrderItem.find({ vendorOrderId: { $in: cancellableVendorOrderIds } }).lean()
+    : [];
+
+  await restockOrderItems(items, "admin_order_cancelled");
 
   order.status = "cancelled";
   await order.save();
