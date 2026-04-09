@@ -56,6 +56,9 @@ const createProductSchema = z.object({
   trackInventory: z.boolean().optional(),
   lowStockThreshold: z.number().int().min(0).optional(),
   requiresManualShipping: z.boolean().optional(),
+  lengthCm: z.number().min(0).optional(),
+  widthCm: z.number().min(0).optional(),
+  heightCm: z.number().min(0).optional(),
 });
 
 const updateProductSchema = createProductSchema.partial();
@@ -85,6 +88,9 @@ const adminUpdateSchema = z.object({
   trackInventory: z.boolean().optional(),
   lowStockThreshold: z.number().int().min(0).optional(),
   requiresManualShipping: z.boolean().optional(),
+  lengthCm: z.number().min(0).optional(),
+  widthCm: z.number().min(0).optional(),
+  heightCm: z.number().min(0).optional(),
   isFeatured: z.boolean().optional(),
   status: z.enum(["draft", "submitted", "approved", "rejected", "archived"]).optional(),
 });
@@ -375,6 +381,9 @@ async function vendorCreateProduct(req, res) {
     trackInventory: body.trackInventory ?? true,
     lowStockThreshold: body.lowStockThreshold ?? 5,
     requiresManualShipping: body.requiresManualShipping ?? false,
+    lengthCm: body.lengthCm ?? 0,
+    widthCm: body.widthCm ?? 0,
+    heightCm: body.heightCm ?? 0,
     source: "vendor",
     isPlatformProduct: false,
     status: "draft",
@@ -490,6 +499,9 @@ async function vendorUpdateMyProduct(req, res) {
   if (body.trackInventory !== undefined) product.trackInventory = body.trackInventory;
   if (body.lowStockThreshold !== undefined) product.lowStockThreshold = body.lowStockThreshold;
   if (body.requiresManualShipping !== undefined) product.requiresManualShipping = body.requiresManualShipping;
+  if (body.lengthCm !== undefined) product.lengthCm = body.lengthCm;
+  if (body.widthCm !== undefined) product.widthCm = body.widthCm;
+  if (body.heightCm !== undefined) product.heightCm = body.heightCm;
 
   await product.save();
   await searchService.indexProduct(product);
@@ -641,6 +653,9 @@ async function adminCreateProduct(req, res) {
     trackInventory: body.trackInventory ?? true,
     lowStockThreshold: body.lowStockThreshold ?? 5,
     requiresManualShipping: body.requiresManualShipping ?? false,
+    lengthCm: body.lengthCm ?? 0,
+    widthCm: body.widthCm ?? 0,
+    heightCm: body.heightCm ?? 0,
     createdByAdminId: req.user._id,
     source,
     isPlatformProduct,
@@ -796,6 +811,9 @@ async function adminUpdateProduct(req, res) {
   if (body.trackInventory !== undefined) product.trackInventory = body.trackInventory;
   if (body.lowStockThreshold !== undefined) product.lowStockThreshold = body.lowStockThreshold;
   if (body.requiresManualShipping !== undefined) product.requiresManualShipping = body.requiresManualShipping;
+  if (body.lengthCm !== undefined) product.lengthCm = body.lengthCm;
+  if (body.widthCm !== undefined) product.widthCm = body.widthCm;
+  if (body.heightCm !== undefined) product.heightCm = body.heightCm;
   if (body.isFeatured !== undefined) product.isFeatured = body.isFeatured;
   if (body.status !== undefined) product.status = body.status;
 

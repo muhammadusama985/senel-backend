@@ -85,6 +85,10 @@ const productSchema = new mongoose.Schema(
 
     requiresManualShipping: { type: Boolean, default: false, index: true },
 
+    lengthCm: { type: Number, default: 0, min: 0 },
+    widthCm: { type: Number, default: 0, min: 0 },
+    heightCm: { type: Number, default: 0, min: 0 },
+
     // Optional: country of origin/manufacturing etc. helpful for filtering
     country: { type: String, default: "", index: true },
     currency: { type: String, enum: ["EUR", "TRY", "USD"], default: "EUR", index: true },
