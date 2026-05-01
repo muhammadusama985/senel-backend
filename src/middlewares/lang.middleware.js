@@ -15,14 +15,20 @@ function detectLanguage(req) {
   // 1) query parameter ?lang=
   if (req.query?.lang) return normalizeLang(req.query.lang);
 
-  // 2) Accept-Language header
+  // 2) Custom language header
+  const customHeader = req.headers["x-lang"] || req.headers["x-language"];
+  if (customHeader) {
+    return normalizeLang(customHeader);
+  }
+
+  // 3) Accept-Language header
   const header = req.headers["accept-language"];
   if (header) {
     const first = String(header).split(",")[0];
     return normalizeLang(first);
   }
 
-  // 3) Default to English
+  // 4) Default to English
   return "en";
 }
 
