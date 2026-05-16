@@ -62,6 +62,7 @@ const vendorCouponsRoutes = require("./routes/vendorCoupons.routes");
 const vendorAnalyticsRoutes = require("./routes/vendorAnalytics.routes");
 const deviceTokensRoutes = require("./routes/deviceTokens.routes");
 const stripePaymentsRoutes = require("./routes/stripePayments.routes");
+const adminShippingCompaniesRoutes = require("./routes/adminShippingCompanies.routes");
 
 const { notFound, errorHandler } = require("./middlewares/error.middleware");
 
@@ -212,6 +213,7 @@ app.use("/api/v1/vendor", supportTicketRoutes);
 app.use("/api/v1/vendor", vendorCouponsRoutes);
 app.use("/api/v1/vendor", vendorAnalyticsRoutes);
 app.use("/api/v1", deviceTokensRoutes);
+app.use("/api/v1/admin", adminShippingCompaniesRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
