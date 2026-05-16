@@ -44,7 +44,8 @@ router.post(
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3001}`;
+    // Use the host from the request to construct the URL
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
     const imageUrl = `${baseUrl}/uploads/categories/${req.file.filename}`;
 
     res.status(201).json({
