@@ -8,5 +8,6 @@ router.use(requireAuth, requireRole("admin"));
 
 router.get("/password-reset/tokens", asyncHandler(c.adminListPasswordResetTokens));
 router.patch("/password-reset/tokens/:tokenId", asyncHandler(c.adminUpdatePasswordResetToken));
+router.post("/change-password", asyncHandler(c.adminChangePassword));
 
 module.exports = router;

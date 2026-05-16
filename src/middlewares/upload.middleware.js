@@ -19,6 +19,7 @@ const createUploadDirs = () => {
     path.join(__dirname, '../../uploads/vendor/documents'),
     path.join(__dirname, '../../uploads/vendor/products'),
     path.join(__dirname, '../../uploads/customer/payment-proofs'),
+    path.join(__dirname, '../../uploads/categories'),
   ];
 
   dirs.forEach(ensureDir);
@@ -44,6 +45,8 @@ const storage = multer.diskStorage({
       uploadPath = path.join(__dirname, '../../uploads/banners');
     } else if (req.originalUrl.includes('/blog')) {
       uploadPath = path.join(__dirname, '../../uploads/blogs');
+    } else if (req.originalUrl.includes('/catalog/admin/categories/upload-image')) {
+      uploadPath = path.join(__dirname, '../../uploads/categories');
     }
 
     ensureDir(uploadPath);
@@ -84,6 +87,10 @@ const storage = multer.diskStorage({
 
     if (file.fieldname === 'proofImage') {
       return cb(null, `proof-${uniqueSuffix}${ext}`);
+    }
+
+    if (file.fieldname === 'categoryImage') {
+      return cb(null, `category-${uniqueSuffix}${ext}`);
     }
 
     cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);

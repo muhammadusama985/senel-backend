@@ -245,4 +245,19 @@ async function updateMe(req, res) {
   return res.json({ user: toSafeUser(req.user) });
 }
 
-module.exports = { register, login, requestLoginOtp, verifyLoginOtp, updateMe };
+// me - get current user
+async function me(req, res) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) return res.status(401).json({ message: "No token provided" });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+    const user = await User.findById(decoded.sub).lean();
+    if (!user) return res.status(401).json({ message: "User not found" });
+    res.json({ user: toSafeUser(user) });
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+}
+
+module.exports = { register, login, requestLoginOtp, verifyLoginOtp, updateMe, me };

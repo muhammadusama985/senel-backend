@@ -18,7 +18,7 @@ const createCategorySchema = z.object({
   parentId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: z.string().optional().transform(v => v || ""),
 });
 
 async function adminCreateCategory(req, res) {
@@ -67,7 +67,7 @@ const updateCategorySchema = z.object({
   parentId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: z.string().optional().transform(v => v || ""),
 });
 
 async function adminUpdateCategory(req, res) {

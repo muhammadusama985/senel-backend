@@ -18,6 +18,7 @@ const {
   adminUpdateProduct,
   adminArchiveProduct,
   adminGetProduct,
+  adminDeleteProduct,
   uploadMultipleProductImages,
   uploadProductImage,
   adminApproveProduct,
@@ -70,7 +71,8 @@ router.post(
 router.post("/admin/products", requireAuth, requireRole("admin"), asyncHandler(adminCreateProduct));
 router.get("/admin/products", requireAuth, requireRole("admin"), asyncHandler(adminListProducts));
 router.get("/admin/products/:productId", requireAuth, requireRole("admin"), asyncHandler(adminGetProduct));
-router.patch("/admin/products/:productId", requireAuth, requireRole("admin"), asyncHandler(adminUpdateProduct)); // ✅ Add this
+router.patch("/admin/products/:productId", requireAuth, requireRole("admin"), asyncHandler(adminUpdateProduct));
+router.delete("/admin/products/:productId", requireAuth, requireRole("admin"), asyncHandler(adminDeleteProduct));
 router.post("/admin/products/:productId/approve", requireAuth, requireRole("admin"), asyncHandler(adminApproveProduct));
 router.post("/admin/products/:productId/reject", requireAuth, requireRole("admin"), asyncHandler(adminRejectProduct));
 router.post("/admin/products/:productId/archive", requireAuth, requireRole("admin"), asyncHandler(adminArchiveProduct));

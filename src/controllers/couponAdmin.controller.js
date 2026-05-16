@@ -119,4 +119,23 @@ async function adminUpdateCoupon(req, res) {
   res.json({ coupon });
 }
 
-module.exports = { adminCreateCoupon, adminListCoupons, adminUpdateCoupon };
+async function adminDeleteCoupon(req, res) {
+  const id = req.params.couponId;
+
+  const coupon = await Coupon.findById(id);
+  if (!coupon) return res.status(404).json({ message: "Coupon not found" });
+
+  await Coupon.findByIdAndDelete(id);
+
+  await AuditLog.create({
+    actorUserId: req.user._id,
+    action: "COUPON_DELETED",
+    entityType: "Coupon",
+    entityId: id,
+    meta: { code: coupon.code, scope: coupon.scope },
+  });
+
+  res.json({ ok: true });
+}
+
+module.exports = { adminCreateCoupon, adminListCoupons, adminUpdateCoupon, adminDeleteCoupon };

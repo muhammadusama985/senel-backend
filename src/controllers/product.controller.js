@@ -1029,6 +1029,31 @@ async function adminRejectHotRequest(req, res) {
   res.json({ product: localizeProduct(product.toObject(), req.lang) });
 }
 
+async function adminDeleteProduct(req, res) {
+  const productId = req.params.productId;
+  
+  const product = await Product.findById(productId);
+  if (!product) return res.status(404).json({ message: "Product not found" });
+
+  await Product.findByIdAndDelete(productId);
+
+  try {
+    await searchService.deleteProduct(productId);
+  } catch (searchError) {
+    console.error("Search deletion failed:", searchError.message);
+  }
+
+  await AuditLog.create({
+    actorUserId: req.user._id,
+    action: "PRODUCT_DELETED_BY_ADMIN",
+    entityType: "Product",
+    entityId: productId,
+    meta: { vendorId: product.vendorId, title: product.title },
+  });
+
+  res.json({ ok: true });
+}
+
 module.exports = {
   vendorCreateProduct,
   vendorListMyProducts,
@@ -1040,9 +1065,10 @@ module.exports = {
   adminCreateProduct,
   adminListProducts,
   adminArchiveProduct,
+  adminGetProduct,
+  adminDeleteProduct,
   uploadMultipleProductImages,
   uploadProductImage,
-  adminGetProduct,
   adminUpdateProduct,
   adminApproveProduct,
   adminRejectProduct,

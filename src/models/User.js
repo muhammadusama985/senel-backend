@@ -29,17 +29,23 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: USER_ROLES, required: true, index: true },
     status: { type: String, enum: USER_STATUS, default: "active", index: true },
 
-    // B2B relevant placeholders (we’ll extend later)
+    // Google OAuth
+    googleId: { type: String, default: null },
+
+    // B2B relevant placeholders (we'll extend later)
     isVerifiedBusiness: { type: Boolean, default: false }, // customer/vendor verification flag later
   },
   { timestamps: true }
 );
 
-// Ensure at least one identifier exists
+// Ensure at least one identifier exists (except for Google OAuth users)
 userSchema.pre("validate", function () {
-  if (!this.email && !this.phone) {
-    this.invalidate("email", "Either email or phone is required");
-    this.invalidate("phone", "Either email or phone is required");
+  // Skip validation if passwordHash is not required (e.g., Google OAuth)
+  if (!this.passwordHash && !this.googleId) {
+    if (!this.email && !this.phone) {
+      this.invalidate("email", "Either email or phone is required");
+      this.invalidate("phone", "Either email or phone is required");
+    }
   }
 });
 

@@ -2,6 +2,9 @@ const router = require("express").Router();
 const { asyncHandler } = require("../utils/asyncHandler");
 const { requireAuth } = require("../middlewares/auth.middleware");
 const { requireRole } = require("../middlewares/role.middleware");
+const upload = require("../middlewares/upload.middleware");
+const path = require("path");
+const fs = require("fs");
 
 const {
   adminCreateCategory,
@@ -29,6 +32,28 @@ router.post("/admin/categories", requireAuth, requireRole("admin"), asyncHandler
 router.get("/admin/categories", requireAuth, requireRole("admin"), asyncHandler(adminListCategories));
 router.patch("/admin/categories/:categoryId", requireAuth, requireRole("admin"), asyncHandler(adminUpdateCategory));
 router.delete("/admin/categories/:categoryId", requireAuth, requireRole("admin"), asyncHandler(adminDeleteCategory));
+
+// Upload category image endpoint
+router.post(
+  "/admin/categories/upload-image",
+  requireAuth,
+  requireRole("admin"),
+  upload.single("categoryImage"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const baseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3001}`;
+    const imageUrl = `${baseUrl}/uploads/categories/${req.file.filename}`;
+
+    res.status(201).json({
+      success: true,
+      imageUrl,
+      filename: req.file.filename,
+    });
+  })
+);
 
 router.post("/admin/attribute-sets", requireAuth, requireRole("admin"), asyncHandler(adminCreateAttributeSet));
 router.get("/admin/attribute-sets", requireAuth, requireRole("admin"), asyncHandler(adminListAttributeSets));

@@ -3,15 +3,23 @@ const Redis = require("ioredis");
 const fs = require("fs");
 const path = require("path");
 
+const configuredApiKey =
+  process.env.GOOGLE_TRANSLATE_API_KEY ||
+  process.env.GOOGLE_API_KEY ||
+  "";
 const configuredCredentialPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const resolvedCredentialPath = configuredCredentialPath
   ? path.resolve(process.cwd(), configuredCredentialPath)
   : "";
 const hasGoogleCredentials = Boolean(resolvedCredentialPath && fs.existsSync(resolvedCredentialPath));
 let translateWarned = false;
-const translate = hasGoogleCredentials ? new Translate({ keyFilename: resolvedCredentialPath }) : null;
+const translate = configuredApiKey
+  ? new Translate({ key: configuredApiKey })
+  : hasGoogleCredentials
+    ? new Translate({ keyFilename: resolvedCredentialPath })
+    : null;
 
-if (configuredCredentialPath && !hasGoogleCredentials && !translateWarned) {
+if (!configuredApiKey && configuredCredentialPath && !hasGoogleCredentials && !translateWarned) {
   console.warn(
     `Google Translate credentials file not found at ${resolvedCredentialPath}. Translation fallback is enabled.`
   );
@@ -53,6 +61,72 @@ class TranslationService {
   constructor() {
     this.supportedLanguages = ["de", "tr", "fr", "es"];
     this.cacheTTL = 86400;
+    this.nonTranslatableKeys = new Set([
+      "_id",
+      "id",
+      "slug",
+      "sku",
+      "currency",
+      "deepLink",
+      "imageUrl",
+      "imageUrlMobile",
+      "coverImageUrl",
+      "ctaUrl",
+      "createdAt",
+      "updatedAt",
+      "publishedAt",
+      "startAt",
+      "endAt",
+      "deletedAt",
+      "orderNumber",
+      "vendorOrderNumber",
+      "paymentStatus",
+      "shippingStatus",
+      "status",
+      "lang",
+      "locale",
+    ]);
+  }
+
+  _isPlainObject(value) {
+    if (!value || typeof value !== "object") return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
+  }
+
+  _isObjectIdLike(value) {
+    return Boolean(
+      value &&
+      typeof value === "object" &&
+      (value._bsontype === "ObjectId" ||
+        value._bsontype === "ObjectID" ||
+        value.constructor?.name === "ObjectId" ||
+        value.constructor?.name === "ObjectID")
+    );
+  }
+
+  _shouldPreserveString(key, value) {
+    if (typeof value !== "string") return true;
+
+    const trimmed = value.trim();
+    if (!trimmed) return true;
+
+    if (key) {
+      if (this.nonTranslatableKeys.has(key)) return true;
+      if (/id$/i.test(key)) return true;
+      if (/(url|uri)$/i.test(key)) return true;
+      if (/(date|time|at)$/i.test(key)) return true;
+      if (/^(en|de|tr|fr|es)$/i.test(key) && trimmed.length <= 3) return true;
+    }
+
+    if (/^[a-f0-9]{24}$/i.test(trimmed)) return true;
+    if (/^\d{4}-\d{2}-\d{2}t/i.test(trimmed)) return true;
+    if (/^(https?:)?\/\//i.test(trimmed)) return true;
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return true;
+    if (/^#?[0-9a-f]{6,8}$/i.test(trimmed)) return true;
+    if (/^[A-Z]{2,10}$/.test(trimmed)) return true;
+
+    return false;
   }
 
   _getCacheKey(text, targetLang) {
@@ -119,6 +193,14 @@ class TranslationService {
       return obj;
     }
 
+    if (obj instanceof Date || Buffer.isBuffer(obj) || obj instanceof Uint8Array) {
+      return obj;
+    }
+
+    if (this._isObjectIdLike(obj)) {
+      return obj.toString();
+    }
+
     if (visited.has(obj)) return obj;
     visited.add(obj);
 
@@ -130,10 +212,16 @@ class TranslationService {
       return result;
     }
 
+    if (!this._isPlainObject(obj)) {
+      return obj;
+    }
+
     const result = {};
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === "string") {
-        result[key] = await this.translateText(value, targetLang);
+        result[key] = this._shouldPreserveString(key, value)
+          ? value
+          : await this.translateText(value, targetLang);
       } else if (value && typeof value === "object") {
         result[key] = await this.translateObject(value, targetLang, visited);
       } else {
