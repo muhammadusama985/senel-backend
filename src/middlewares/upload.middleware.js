@@ -20,6 +20,8 @@ const createUploadDirs = () => {
     path.join(__dirname, '../../uploads/vendor/products'),
     path.join(__dirname, '../../uploads/customer/payment-proofs'),
     path.join(__dirname, '../../uploads/categories'),
+    path.join(__dirname, '../../uploads/offers'),
+    path.join(__dirname, '../../uploads/rfq'),
   ];
 
   dirs.forEach(ensureDir);
@@ -47,6 +49,10 @@ const storage = multer.diskStorage({
       uploadPath = path.join(__dirname, '../../uploads/blogs');
     } else if (req.originalUrl.includes('/catalog/admin/categories/upload-image')) {
       uploadPath = path.join(__dirname, '../../uploads/categories');
+    } else if (req.originalUrl.includes('/bulk-offers/attachments')) {
+      uploadPath = path.join(__dirname, '../../uploads/offers');
+    } else if (req.originalUrl.includes('/custom-production/attachments')) {
+      uploadPath = path.join(__dirname, '../../uploads/rfq');
     }
 
     ensureDir(uploadPath);
@@ -93,6 +99,14 @@ const storage = multer.diskStorage({
       return cb(null, `category-${uniqueSuffix}${ext}`);
     }
 
+    if (file.fieldname === 'offerAttachment') {
+      return cb(null, `offer-${uniqueSuffix}${ext}`);
+    }
+
+    if (file.fieldname === 'rfqAttachment') {
+      return cb(null, `rfq-${uniqueSuffix}${ext}`);
+    }
+
     cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
   },
 });
@@ -110,7 +124,11 @@ const fileFilter = (req, file, cb) => {
 
   const docMimeTypes = [...imageMimeTypes, 'application/pdf'];
   const isVendorDocRoute = req.originalUrl.includes('/vendors/me/docs');
-  const allowedMimeTypes = isVendorDocRoute ? docMimeTypes : imageMimeTypes;
+  const isOfferOrRfqRoute =
+    req.originalUrl.includes('/bulk-offers/attachments') ||
+    req.originalUrl.includes('/custom-production/attachments');
+  const allowedMimeTypes =
+    isVendorDocRoute || isOfferOrRfqRoute ? docMimeTypes : imageMimeTypes;
 
   const ext = path.extname(file.originalname || '').toLowerCase();
   const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
@@ -123,12 +141,14 @@ const fileFilter = (req, file, cb) => {
     return cb(null, true);
   }
 
-  cb(new Error(isVendorDocRoute ? 'Only image or PDF files are allowed' : 'Only image files are allowed'));
+  cb(new Error(isVendorDocRoute || isOfferOrRfqRoute
+    ? 'Only image or PDF files are allowed'
+    : 'Only image files are allowed'));
 };
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter,
 });
 

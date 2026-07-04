@@ -4,6 +4,7 @@ loadEnv();
 const app = require("./app");
 const { connectDB } = require("./config/db");
 const searchService = require("./services/search.service");
+const negotiationExpirationService = require("./services/negotiationExpiration.service");
 
 const PORT = process.env.PORT || 4000;
 
@@ -22,6 +23,13 @@ const PORT = process.env.PORT || 4000;
   } catch (error) {
     console.error('⚠️ Search service initialization warning:', error.message);
     // Non-fatal error - app can still run with basic search
+  }
+
+  // Start negotiation / RFQ expiration cron
+  try {
+    negotiationExpirationService.init();
+  } catch (error) {
+    console.error('⚠️ Negotiation expiration init failed:', error.message);
   }
   
   // Start server

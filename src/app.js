@@ -63,6 +63,9 @@ const vendorAnalyticsRoutes = require("./routes/vendorAnalytics.routes");
 const deviceTokensRoutes = require("./routes/deviceTokens.routes");
 const stripePaymentsRoutes = require("./routes/stripePayments.routes");
 const adminShippingCompaniesRoutes = require("./routes/adminShippingCompanies.routes");
+const bulkOffersRoutes = require("./routes/bulkOffers.routes");
+const customProductionRoutes = require("./routes/customProduction.routes");
+const attachmentsRoutes = require("./routes/attachments.routes");
 
 const { notFound, errorHandler } = require("./middlewares/error.middleware");
 
@@ -214,6 +217,11 @@ app.use("/api/v1/vendor", vendorCouponsRoutes);
 app.use("/api/v1/vendor", vendorAnalyticsRoutes);
 app.use("/api/v1", deviceTokensRoutes);
 app.use("/api/v1/admin", adminShippingCompaniesRoutes);
+
+// Bulk Offers & Custom Production (Negotiation + RFQ module)
+app.use("/api/v1/bulk-offers", bulkOffersRoutes);
+app.use("/api/v1/custom-production", customProductionRoutes);
+app.use("/api/v1/attachments", attachmentsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
