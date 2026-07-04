@@ -100,7 +100,9 @@ async function createBulkOffer(req, res) {
   const product = await Product.findById(body.productId).lean();
   if (!product) return res.status(404).json({ message: "Product not found" });
   if (!product.vendorId)
-    return res.status(400).json({ message: "Product has no vendor" });
+    return res.status(400).json({ message: "Bulk offers are only available for vendor-listed products" });
+  if (product.isPlatformProduct === true || product.source === "admin_platform")
+    return res.status(400).json({ message: "Bulk offers are not available for platform products" });
 
   const vendor = await Vendor.findById(product.vendorId).lean();
   if (!vendor) return res.status(404).json({ message: "Vendor not found" });
