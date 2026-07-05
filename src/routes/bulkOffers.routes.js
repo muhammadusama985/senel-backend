@@ -27,6 +27,7 @@ router.get("/vendor/:offerId", asyncHandler(c.getVendorOffer));
 router.post("/vendor/:offerId/counter", asyncHandler(c.vendorCounterOffer));
 router.post("/vendor/:offerId/accept", asyncHandler(c.vendorAcceptOffer));
 router.post("/vendor/:offerId/reject", asyncHandler(c.vendorRejectOffer));
+router.delete("/vendor/:offerId", asyncHandler(c.vendorDeleteOffer));
 
 // ============== Admin ==============
 router.use("/admin", requireAuth, requireRole("admin"));

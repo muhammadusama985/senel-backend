@@ -120,6 +120,10 @@ const bulkOfferSchema = new mongoose.Schema(
     currentTotal: { type: Number, default: 0 },
     currency: { type: String, default: "EUR", index: true },
 
+    // Variant info (when product has variants)
+    variantSku: { type: String, default: "" },
+    variantAttributes: { type: Object, default: {} },
+
     // Last action side - determines who is expected to respond next
     lastActionBy: {
       type: String,

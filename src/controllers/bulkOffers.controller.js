@@ -68,6 +68,9 @@ const createOfferSchema = z.object({
   notes: z.string().optional().default(""),
   validUntil: z.string().optional(),
   validDays: z.number().int().min(1).max(90).optional(),
+  // Variant selection (for products that have variants)
+  variantSku: z.string().optional(),
+  variantAttributes: z.record(z.string()).optional(),
   attachments: z
     .array(
       z.object({
@@ -110,6 +113,52 @@ async function createBulkOffer(req, res) {
   const buyer = await User.findById(req.user._id).lean();
   if (!buyer) return res.status(401).json({ message: "Buyer not found" });
 
+  // ---- Variant resolution ----
+  // For variant products, a variantSku must be provided and must match
+  // an existing variant. We resolve the variant object so we can:
+  //   1) Validate stock against the chosen variant
+  //   2) Persist variant details on the offer (vendor sees what was negotiated)
+  let resolvedVariant = null;
+  if (product.hasVariants) {
+    const variantSku = body.variantSku || "";
+    if (!variantSku) {
+      return res.status(400).json({
+        message: "Please select a product option (variant) before submitting an offer",
+      });
+    }
+    const variant = (product.variants || []).find((v) => v && v.sku === variantSku);
+    if (!variant) {
+      return res.status(400).json({
+        message: "Selected product option is no longer available",
+      });
+    }
+    resolvedVariant = variant;
+  }
+
+  // ---- Stock validation ----
+  // For non-variant products: stockQty is the available stock.
+  // For variant products: stockQty is treated as the variant stock.
+  const availableStock = resolvedVariant
+    ? Number(resolvedVariant.stockQty || 0)
+    : Number(product.stockQty || 0);
+  if (availableStock <= 0) {
+    return res.status(400).json({
+      message: "This product is currently out of stock",
+    });
+  }
+  if (body.qty > availableStock) {
+    return res.status(400).json({
+      message: `Only ${availableStock} units available. Please reduce your quantity.`,
+    });
+  }
+
+  // ---- MOQ validation ----
+  if (body.qty < (product.moq || 1)) {
+    return res.status(400).json({
+      message: `Quantity must be at least the MOQ (${product.moq || 1})`,
+    });
+  }
+
   // validity
   let validUntil;
   if (body.validUntil) {
@@ -150,6 +199,12 @@ async function createBulkOffer(req, res) {
     currentTotal: Number((body.qty * body.unitPrice).toFixed(2)),
     currency,
 
+    // Persist variant info so vendor sees what was negotiated
+    variantSku: resolvedVariant ? resolvedVariant.sku : (body.variantSku || ""),
+    variantAttributes: resolvedVariant
+      ? (resolvedVariant.attributes || {})
+      : (body.variantAttributes || {}),
+
     lastActionBy: "buyer",
     validUntil,
 
@@ -162,6 +217,10 @@ async function createBulkOffer(req, res) {
         qty: body.qty,
         unitPrice: Number(body.unitPrice.toFixed(2)),
         currency,
+        variantSku: resolvedVariant ? resolvedVariant.sku : (body.variantSku || ""),
+        variantAttributes: resolvedVariant
+          ? (resolvedVariant.attributes || {})
+          : (body.variantAttributes || {}),
         notes: body.notes || "",
         attachments: body.attachments || [],
         createdAt: new Date(),
@@ -482,6 +541,30 @@ async function vendorRejectOffer(req, res) {
   res.json({ offer });
 }
 
+/**
+ * Vendor can delete an offer only after it has reached a terminal state:
+ * accepted, rejected, expired, or cancelled.
+ * Active offers (requested/countered) must be rejected/expired first to
+ * preserve negotiation audit history.
+ */
+async function vendorDeleteOffer(req, res) {
+  const offer = await BulkOffer.findOne({
+    _id: req.params.offerId,
+    vendorId: req.vendorContext.vendorId,
+  });
+  if (!offer) return res.status(404).json({ message: "Offer not found" });
+
+  const TERMINAL = ["accepted", "rejected", "expired", "cancelled"];
+  if (!TERMINAL.includes(offer.status)) {
+    return res.status(400).json({
+      message: `Cannot delete an active offer (status: ${offer.status}). Reject or wait for expiration first.`,
+    });
+  }
+
+  await BulkOffer.deleteOne({ _id: offer._id });
+  res.json({ ok: true, message: "Offer deleted", offerId: offer._id });
+}
+
 // ----------------------- shared: payment-link checkout -----------------------
 
 const paymentLinkSchema = z.object({
@@ -737,6 +820,7 @@ module.exports = {
   vendorCounterOffer,
   vendorAcceptOffer,
   vendorRejectOffer,
+  vendorDeleteOffer,
   // checkout / payment link
   getOfferByPaymentToken,
   checkoutFromOffer,
