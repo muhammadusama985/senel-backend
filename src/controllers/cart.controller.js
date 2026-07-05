@@ -284,7 +284,8 @@ async function addItem(req, res) {
       pricing = {
         unitPrice,
         currency: product.currency || "EUR",
-        tierMinQtyApplied: 0,
+        // tierMinQtyApplied must satisfy schema min: 1; use the qty itself
+        tierMinQtyApplied: body.qty,
         lineTotal: Number((unitPrice * body.qty).toFixed(2)),
       };
     } else {
@@ -318,7 +319,8 @@ async function addItem(req, res) {
       newPricing = {
         unitPrice,
         currency: product.currency || "EUR",
-        tierMinQtyApplied: 0,
+        // schema requires tierMinQtyApplied min: 1
+        tierMinQtyApplied: newQty,
         lineTotal: Number((unitPrice * newQty).toFixed(2)),
       };
     } else {
@@ -355,26 +357,44 @@ async function addItem(req, res) {
 
   computeCartTotals(cart);
   await recomputeCouponIfAny(cart);
-  await cart.save();
 
-  // Log add item event
-  await logEvent({
-    type: "CART_ADD_ITEM",
-    userId: req.user._id,
-    productId: product._id,
-    vendorId: product.vendorId,
-    cartId: cart._id,
-    meta: {
-      quantity: body.qty,
-      variantSku: variantSku || undefined,
-      unitPrice: existing ? existing.unitPrice : pricing.unitPrice,
-      currency: existing ? existing.currency : pricing.currency,
-      lineTotal: existing ? existing.lineTotal : pricing.lineTotal,
-      cartSubtotal: cart.subtotal,
-      cartItemCount: cart.totalItems,
-      action: existing ? "incremented" : "added"
-    }
-  });
+  try {
+    await cart.save();
+  } catch (saveErr) {
+    // Surface Mongoose validation errors so we can see the actual problem
+    console.error("[cart.addItem] cart.save failed:", saveErr.message, saveErr.errors || saveErr);
+    return res.status(400).json({
+      message: saveErr.message || "Failed to save cart",
+      validationErrors: saveErr.errors
+        ? Object.fromEntries(
+            Object.entries(saveErr.errors).map(([k, v]) => [k, v.message || String(v)])
+          )
+        : undefined,
+    });
+  }
+
+  // Log add item event - do not let logging break the main flow
+  try {
+    await logEvent({
+      type: "CART_ADD_ITEM",
+      userId: req.user._id,
+      productId: product._id,
+      vendorId: product.vendorId,
+      cartId: cart._id,
+      meta: {
+        quantity: body.qty,
+        variantSku: variantSku || undefined,
+        unitPrice: existing ? existing.unitPrice : pricing.unitPrice,
+        currency: existing ? existing.currency : pricing.currency,
+        lineTotal: existing ? existing.lineTotal : pricing.lineTotal,
+        cartSubtotal: cart.subtotal,
+        cartItemCount: cart.totalItems,
+        action: existing ? "incremented" : "added"
+      }
+    });
+  } catch (logErr) {
+    console.error("[cart.addItem] logEvent failed (non-fatal):", logErr.message);
+  }
 
   res.json({ cart: await serializeCart(cart) });
 }
