@@ -117,7 +117,9 @@ async function createRFQ(req, res) {
     validUntil = addDays(new Date(), body.validDays || 14);
   }
 
-  const rfq = await CustomProductionRequest.create({
+  // Build the RFQ document and save it (so we can catch validation errors
+  // and surface them instead of letting the generic handler return 500).
+  const rfqDoc = new CustomProductionRequest({
     productId: product._id,
     vendorId: vendor._id,
     buyerUserId: buyer._id,
@@ -157,10 +159,32 @@ async function createRFQ(req, res) {
         createdAt: new Date(),
       },
     ],
+    // Explicitly clear paymentLink fields so they don't carry over from any defaults
+    paymentLink: { token: "", generatedAt: null, expiresAt: null, usedAt: null, orderId: null },
   });
 
-  await notifyRFQ(rfq, "new_request");
-  res.status(201).json({ rfq });
+  try {
+    await rfqDoc.save();
+  } catch (saveErr) {
+    console.error("[customProduction.createRFQ] save failed:", saveErr.message, saveErr.errors || saveErr);
+    return res.status(400).json({
+      message: saveErr.message || "Failed to create RFQ",
+      validationErrors: saveErr.errors
+        ? Object.fromEntries(
+            Object.entries(saveErr.errors).map(([k, v]) => [k, v.message || String(v)])
+          )
+        : undefined,
+    });
+  }
+
+  try {
+    await notifyRFQ(rfqDoc, "new_request");
+  } catch (notifyErr) {
+    // Do not let notification failure break the creation flow
+    console.error("[customProduction.createRFQ] notify failed (non-fatal):", notifyErr.message);
+  }
+
+  res.status(201).json({ rfq: rfqDoc.toObject() });
 }
 
 async function listMyBuyerRFQs(req, res) {
@@ -491,6 +515,30 @@ async function vendorMarkCompleted(req, res) {
   res.json({ rfq });
 }
 
+/**
+ * Vendor can delete an RFQ only after it has reached a terminal state:
+ * accepted, rejected, expired, cancelled, or completed.
+ * Active RFQs (requested/quoted/in_production) cannot be deleted to
+ * preserve negotiation and production history.
+ */
+async function vendorDeleteRFQ(req, res) {
+  const rfq = await CustomProductionRequest.findOne({
+    _id: req.params.rfqId,
+    vendorId: req.vendorContext.vendorId,
+  });
+  if (!rfq) return res.status(404).json({ message: "RFQ not found" });
+
+  const TERMINAL = ["accepted", "rejected", "expired", "cancelled", "completed"];
+  if (!TERMINAL.includes(rfq.status)) {
+    return res.status(400).json({
+      message: `Cannot delete an active RFQ (status: ${rfq.status}). Reject it or wait for it to reach a terminal state.`,
+    });
+  }
+
+  await CustomProductionRequest.deleteOne({ _id: rfq._id });
+  res.json({ ok: true, message: "RFQ deleted", rfqId: rfq._id });
+}
+
 // ----------------------- shared: payment-link checkout -----------------------
 
 const checkoutRFQSchema = z.object({
@@ -746,6 +794,7 @@ module.exports = {
   vendorRejectRFQ,
   vendorMarkInProduction,
   vendorMarkCompleted,
+  vendorDeleteRFQ,
   // payment link
   getRFQByPaymentToken,
   checkoutFromRFQ,

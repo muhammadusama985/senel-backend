@@ -29,6 +29,7 @@ router.post("/vendor/:rfqId/messages", asyncHandler(c.vendorCounterMessage));
 router.post("/vendor/:rfqId/reject", asyncHandler(c.vendorRejectRFQ));
 router.post("/vendor/:rfqId/start-production", asyncHandler(c.vendorMarkInProduction));
 router.post("/vendor/:rfqId/complete", asyncHandler(c.vendorMarkCompleted));
+router.delete("/vendor/:rfqId", asyncHandler(c.vendorDeleteRFQ));
 
 // ============== Admin ==============
 router.use("/admin", requireAuth, requireRole("admin"));
