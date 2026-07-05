@@ -221,6 +221,11 @@ const addItemSchema = z.object({
   qty: z.number().int().min(1),
   variantSku: z.string().optional(), // required if product.hasVariants
   variantAttributes: z.record(z.string()).optional(),
+  // Optional override: when adding to cart from an accepted bulk offer or RFQ,
+  // the negotiated/quotation price should be used instead of tier pricing.
+  customUnitPrice: z.number().min(0).optional(),
+  customPriceSource: z.enum(["offer", "rfq"]).optional(),
+  customPriceRefId: z.string().optional(), // offerId or rfqId for traceability
 });
 
 async function addItem(req, res) {
@@ -241,7 +246,16 @@ async function addItem(req, res) {
     }
   }
 
-  const variantSku = product.hasVariants ? (body.variantSku || "") : "";
+  let variantSku = product.hasVariants ? (body.variantSku || "") : "";
+  // When adding from an accepted offer/RFQ without an explicit variant, pick the first
+  // available variant automatically so the cart flow can complete normally.
+  if (product.hasVariants && !variantSku && body.customPriceSource) {
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const firstWithStock = variants.find((v) => Number(v.stockQty || 0) > 0) || variants[0];
+    if (firstWithStock && firstWithStock.sku) {
+      variantSku = firstWithStock.sku;
+    }
+  }
   if (product.hasVariants && !variantSku) {
     return res.status(400).json({ message: "variantSku is required for variant products" });
   }
@@ -258,10 +272,24 @@ async function addItem(req, res) {
   if (availableStock <= 0) return res.status(400).json({ message: "Out of stock" });
   if (body.qty > availableStock) return res.status(400).json({ message: `Only ${availableStock} available` });
 
-  // Price snapshot
+  // Price snapshot - either negotiated (offer/RFQ) or tier-based
   let pricing;
   try {
-    pricing = computePricingSnapshot(product, body.qty);
+    if (body.customUnitPrice != null) {
+      // Use negotiated/quotation price (from accepted bulk offer or RFQ)
+      const unitPrice = Number(body.customUnitPrice);
+      if (Number.isNaN(unitPrice) || unitPrice < 0) {
+        return res.status(400).json({ message: "Invalid customUnitPrice" });
+      }
+      pricing = {
+        unitPrice,
+        currency: product.currency || "EUR",
+        tierMinQtyApplied: 0,
+        lineTotal: Number((unitPrice * body.qty).toFixed(2)),
+      };
+    } else {
+      pricing = computePricingSnapshot(product, body.qty);
+    }
   } catch (e) {
     return res.status(e.statusCode || 400).json({ message: e.message });
   }
@@ -284,7 +312,18 @@ async function addItem(req, res) {
     }
     if (newQty > availableStock) return res.status(400).json({ message: `Only ${availableStock} available` });
 
-    const newPricing = computePricingSnapshot(product, newQty);
+    let newPricing;
+    if (body.customUnitPrice != null) {
+      const unitPrice = Number(body.customUnitPrice);
+      newPricing = {
+        unitPrice,
+        currency: product.currency || "EUR",
+        tierMinQtyApplied: 0,
+        lineTotal: Number((unitPrice * newQty).toFixed(2)),
+      };
+    } else {
+      newPricing = computePricingSnapshot(product, newQty);
+    }
 
     existing.qty = newQty;
     existing.unitPrice = newPricing.unitPrice;
