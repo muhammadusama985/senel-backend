@@ -35,8 +35,8 @@ function nowOrderNumber() {
   return `SE-${ts}-${rand}`;
 }
 
-function computePricingSnapshot(product, qty) {
-  const tier = getTierPrice(product.priceTiers, qty);
+function computePricingSnapshot(product, qty, selectedAttributes, attributeAdjustments) {
+  const tier = getTierPrice(product.priceTiers, qty, selectedAttributes, attributeAdjustments);
   if (!tier) {
     const err = new Error("Product price tiers not configured");
     err.statusCode = 400;
@@ -222,7 +222,8 @@ async function checkout(req, res) {
       }
 
       // Price snapshot (truth)
-      const pricing = computePricingSnapshot(product, item.qty);
+      const selectedAttrs = normalizeSelectedVariantAttributes(product, variantSku, item.variantAttributes || {});
+      const pricing = computePricingSnapshot(product, item.qty, selectedAttrs, product.attributeAdjustments);
 
       validatedItems.push({
         product,

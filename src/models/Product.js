@@ -92,6 +92,13 @@ const productSchema = new mongoose.Schema(
     // Optional: country of origin/manufacturing etc. helpful for filtering
     country: { type: String, default: "", index: true },
     currency: { type: String, enum: ["EUR", "TRY", "USD"], default: "EUR", index: true },
+
+    // Per-attribute-value price adjustments.
+    // Structure: { "<AttributeName>": { "<Value>": adjustmentNumber, ... }, ... }
+    // e.g. { Color: { Green: -10, Red: 0, Blue: -0.30 }, Size: { Small: -20, Medium: 0 } }
+    // When a buyer selects a variant, the combined adjustment is the sum of all
+    // selected attribute values' adjustments (empty/missing = 0).
+    attributeAdjustments: { type: Object, default: {} },
   },
   { timestamps: true }
 );

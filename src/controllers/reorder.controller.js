@@ -64,7 +64,8 @@ async function reorder(req, res) {
       continue;
     }
 
-    const tier = getTierPrice(p.priceTiers, qty);
+    const selectedAttrs = oi.variantAttributes || {};
+    const tier = getTierPrice(p.priceTiers, qty, selectedAttrs, p.attributeAdjustments);
     if (!tier) {
       unavailableItems.push({ productId: oi.productId, reason: "Pricing is unavailable" });
       continue;
@@ -76,7 +77,7 @@ async function reorder(req, res) {
 
     if (existing) {
       existing.qty += qty;
-      const updatedTier = getTierPrice(p.priceTiers, existing.qty);
+      const updatedTier = getTierPrice(p.priceTiers, existing.qty, selectedAttrs, p.attributeAdjustments);
       existing.unitPrice = Number(updatedTier?.unitPrice || tier.unitPrice);
       existing.currency = p.currency || "EUR";
       existing.tierMinQtyApplied = Number(updatedTier?.minQty || tier.minQty);

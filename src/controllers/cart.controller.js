@@ -136,8 +136,8 @@ function isAdminFulfillmentProduct(product) {
   return product?.isPlatformProduct === true || product?.source === "admin_platform";
 }
 
-function computePricingSnapshot(product, qty) {
-  const tier = getTierPrice(product.priceTiers, qty);
+function computePricingSnapshot(product, qty, selectedAttributes, attributeAdjustments) {
+  const tier = getTierPrice(product.priceTiers, qty, selectedAttributes, attributeAdjustments);
   if (!tier) {
     const err = new Error("Product price tiers not configured");
     err.statusCode = 400;
@@ -289,7 +289,8 @@ async function addItem(req, res) {
         lineTotal: Number((unitPrice * body.qty).toFixed(2)),
       };
     } else {
-      pricing = computePricingSnapshot(product, body.qty);
+      const selectedAttrs = normalizeSelectedVariantAttributes(product, variantSku, body.variantAttributes);
+      pricing = computePricingSnapshot(product, body.qty, selectedAttrs, product.attributeAdjustments);
     }
   } catch (e) {
     return res.status(e.statusCode || 400).json({ message: e.message });
@@ -324,7 +325,8 @@ async function addItem(req, res) {
         lineTotal: Number((unitPrice * newQty).toFixed(2)),
       };
     } else {
-      newPricing = computePricingSnapshot(product, newQty);
+      const existingAttrs = normalizeSelectedVariantAttributes(product, variantSku, body.variantAttributes);
+      newPricing = computePricingSnapshot(product, newQty, existingAttrs, product.attributeAdjustments);
     }
 
     existing.qty = newQty;
@@ -452,7 +454,8 @@ async function updateItemQty(req, res) {
   // Pricing
   let pricing;
   try {
-    pricing = computePricingSnapshot(product, body.qty);
+    const itemAttrs = normalizeSelectedVariantAttributes(product, variantSku, item.variantAttributes);
+    pricing = computePricingSnapshot(product, body.qty, itemAttrs, product.attributeAdjustments);
   } catch (e) {
     return res.status(e.statusCode || 400).json({ message: e.message });
   }

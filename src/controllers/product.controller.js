@@ -49,6 +49,7 @@ const createProductSchema = z.object({
   sku: z.string().optional(),
   moq: z.number().int().min(1),
   priceTiers: z.array(priceTierInput).min(1),
+  attributeAdjustments: z.record(z.record(z.number())).optional(),
   hasVariants: z.boolean().optional(),
   stockQty: z.number().int().min(0).optional(),
   variants: z.array(variantInput).optional(),
@@ -79,6 +80,7 @@ const adminUpdateSchema = z.object({
   sku: z.string().optional(),
   moq: z.number().int().min(1).optional(),
   priceTiers: z.array(priceTierInput).optional(),
+  attributeAdjustments: z.record(z.record(z.number())).optional(),
   stockQty: z.number().int().min(0).optional(),
   imageUrls: z.array(z.string().url()).optional(),
   hasVariants: z.boolean().optional(),
@@ -387,6 +389,7 @@ async function vendorCreateProduct(req, res) {
     lengthCm: body.lengthCm ?? 0,
     widthCm: body.widthCm ?? 0,
     heightCm: body.heightCm ?? 0,
+    attributeAdjustments: body.attributeAdjustments ?? {},
     source: "vendor",
     isPlatformProduct: false,
     status: "draft",
@@ -504,6 +507,7 @@ async function vendorUpdateMyProduct(req, res) {
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
+  if (body.attributeAdjustments !== undefined) product.attributeAdjustments = body.attributeAdjustments;
   if (body.trackInventory !== undefined) product.trackInventory = body.trackInventory;
   if (body.lowStockThreshold !== undefined) product.lowStockThreshold = body.lowStockThreshold;
   if (body.requiresManualShipping !== undefined) product.requiresManualShipping = body.requiresManualShipping;
@@ -670,6 +674,7 @@ async function adminCreateProduct(req, res) {
     lengthCm: body.lengthCm ?? 0,
     widthCm: body.widthCm ?? 0,
     heightCm: body.heightCm ?? 0,
+    attributeAdjustments: body.attributeAdjustments ?? {},
     createdByAdminId: req.user._id,
     source,
     isPlatformProduct,
@@ -827,6 +832,7 @@ async function adminUpdateProduct(req, res) {
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
+  if (body.attributeAdjustments !== undefined) product.attributeAdjustments = body.attributeAdjustments;
   if (body.trackInventory !== undefined) product.trackInventory = body.trackInventory;
   if (body.lowStockThreshold !== undefined) product.lowStockThreshold = body.lowStockThreshold;
   if (body.requiresManualShipping !== undefined) product.requiresManualShipping = body.requiresManualShipping;
