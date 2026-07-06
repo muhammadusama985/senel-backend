@@ -4,9 +4,13 @@ const path = require('path');
 class FileUtils {
     /**
      * Generate public URL for uploaded file
+     * Always uses https:// to avoid mixed-content warnings.
+     * (Cloudflare terminates SSL and forwards to backend as HTTP internally,
+     * so req.protocol would otherwise return 'http'.)
      */
     static getFileUrl(req, filename, subfolder = 'vendor') {
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const host = req.get('host');
+        const baseUrl = `https://${host}`;
         return `${baseUrl}/uploads/${subfolder}/${filename}`;
     }
 

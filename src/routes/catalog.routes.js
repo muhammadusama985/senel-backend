@@ -44,8 +44,9 @@ router.post(
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    // Use the host from the request to construct the URL
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    // Always use https:// to avoid mixed-content warnings
+    // (Cloudflare terminates SSL and forwards to backend as HTTP internally)
+    const baseUrl = `https://${req.get('host')}`;
     const imageUrl = `${baseUrl}/uploads/categories/${req.file.filename}`;
 
     res.status(201).json({
