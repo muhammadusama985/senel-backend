@@ -462,10 +462,19 @@ async function updateItemQty(req, res) {
 
   item.qty = body.qty;
   item.moq = product.moq;
-  item.unitPrice = pricing.unitPrice;
-  item.currency = pricing.currency;
-  item.tierMinQtyApplied = pricing.tierMinQtyApplied;
-  item.lineTotal = pricing.lineTotal;
+  // When the cart line carries a negotiated price (bulk offer / RFQ),
+  // preserve the negotiated unitPrice / currency instead of overwriting with the
+  // tier-based pricing that was just computed. The lineTotal is recomputed from
+  // the negotiated unitPrice and the new qty.
+  if (item.customPriceSource) {
+    item.tierMinQtyApplied = body.qty;
+    item.lineTotal = Number((item.unitPrice * body.qty).toFixed(2));
+  } else {
+    item.unitPrice = pricing.unitPrice;
+    item.currency = pricing.currency;
+    item.tierMinQtyApplied = pricing.tierMinQtyApplied;
+    item.lineTotal = pricing.lineTotal;
+  }
   item.title = product.title;
   item.imageUrl = pickProductImage(product);
   item.vendorId = product.vendorId;

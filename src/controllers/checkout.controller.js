@@ -221,9 +221,22 @@ async function checkout(req, res) {
         throw Object.assign(new Error(`Not enough stock for ${product.title}. Available: ${availableStock}`), { statusCode: 400 });
       }
 
-      // Price snapshot (truth)
+      // Price snapshot (truth) - prefer tier pricing for normal products,
+      // but preserve the negotiated unitPrice / lineTotal for cart lines that came
+      // from an accepted bulk offer or RFQ (where customPriceSource is set).
       const selectedAttrs = normalizeSelectedVariantAttributes(product, variantSku, item.variantAttributes || {});
-      const pricing = computePricingSnapshot(product, item.qty, selectedAttrs, product.attributeAdjustments);
+      if (item.customPriceSource) {
+        const negotiatedUnitPrice = Number(item.unitPrice);
+        const negotiatedLineTotal = Number((negotiatedUnitPrice * item.qty).toFixed(2));
+        pricing = {
+          unitPrice: negotiatedUnitPrice,
+          currency: item.currency || product.currency || 'EUR',
+          tierMinQtyApplied: item.qty,
+          lineTotal: negotiatedLineTotal,
+        };
+      } else {
+        pricing = computePricingSnapshot(product, item.qty, selectedAttrs, product.attributeAdjustments);
+      }
 
       validatedItems.push({
         product,
