@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const helmet = require("helmet");
@@ -222,6 +222,11 @@ app.use("/api/v1/admin", adminShippingCompaniesRoutes);
 app.use("/api/v1/bulk-offers", bulkOffersRoutes);
 app.use("/api/v1/custom-production", customProductionRoutes);
 app.use("/api/v1/attachments", attachmentsRoutes);
+
+// Category requests (vendor and admin): mount on both /vendor (vendor-side)
+// and /admin (admin-side) prefixes since the router has role-gated endpoints.
+app.use("/api/v1/vendor", categoryRequestRoutes);
+app.use("/api/v1/admin", categoryRequestRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
