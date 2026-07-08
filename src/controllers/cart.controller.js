@@ -339,6 +339,7 @@ async function addItem(req, res) {
     existing.moq = product.moq;
     existing.variantAttributes = normalizeSelectedVariantAttributes(product, variantSku, body.variantAttributes);
     existing.requiresManualShipping = product.requiresManualShipping || false;
+    // customPriceSource / customPriceRefId already live on the existing line; do not change them here.
   } else {
     cart.items.push({
       productId: product._id,
@@ -354,6 +355,9 @@ async function addItem(req, res) {
       title: product.title,
       imageUrl: pickProductImage(product),
       requiresManualShipping: product.requiresManualShipping || false,
+      // Preserve negotiated/quotation pricing marker so checkout can honor it
+      customPriceSource: body.customPriceSource || null,
+      customPriceRefId: body.customPriceRefId || null,
     });
   }
 

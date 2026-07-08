@@ -22,6 +22,12 @@ const cartItemSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     imageUrl: { type: String, default: "" },
 
+    // Negotiated/quotation pricing (from accepted bulk offer or RFQ).
+    // When set, the cart line carries a non-tier unitPrice that must be preserved
+    // through qty updates and checkout. When absent, tier pricing applies.
+    customPriceSource: { type: String, enum: ["offer", "rfq"], default: null },
+    customPriceRefId: { type: String, default: null },
+
       // ✅ ADD THIS: Manual shipping flag
     requiresManualShipping: { type: Boolean, default: false },
   },
