@@ -66,6 +66,7 @@ const adminShippingCompaniesRoutes = require("./routes/adminShippingCompanies.ro
 const bulkOffersRoutes = require("./routes/bulkOffers.routes");
 const customProductionRoutes = require("./routes/customProduction.routes");
 const attachmentsRoutes = require("./routes/attachments.routes");
+const categoryRequestRoutes = require("./routes/categoryRequest.routes");
 
 const { notFound, errorHandler } = require("./middlewares/error.middleware");
 
