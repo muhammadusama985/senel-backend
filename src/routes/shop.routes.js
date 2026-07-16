@@ -10,6 +10,7 @@ const {
   reindexSearch,
   getProductBySlug,
   getVendorStore,
+  getVendorMiniById,
   listVendors,
   listVendorProducts,
   listCategoriesPublic,
@@ -35,6 +36,9 @@ router.get("/trending", asyncHandler(getTrending));
 router.get("/categories", asyncHandler(listCategoriesPublic));
 
 // Vendors
+// NOTE: the "/vendors/by-id/:vendorId" route MUST be declared before
+// "/vendors/:storeSlug" so Express does not capture "by-id" as a storeSlug.
+router.get("/vendors/by-id/:vendorId", asyncHandler(getVendorMiniById));
 router.get("/vendors", asyncHandler(listVendors));
 router.get("/vendors/:storeSlug", asyncHandler(getVendorStore));
 router.get("/vendors/:storeSlug/products", asyncHandler(listVendorProducts));

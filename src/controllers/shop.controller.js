@@ -370,6 +370,33 @@ async function getProductBySlug(req, res) {
 }
 
 /**
+ * GET /api/v1/shop/vendors/by-id/:vendorId
+ * Public vendor mini-card by id (approved vendors only). Used by the customer
+ * product detail page where only vendorId is available on the product so we can
+ * render the "Sold by <vendor>" link without an extra lookup round-trip via slug.
+ */
+async function getVendorMiniById(req, res) {
+  const vendorId = (req.params.vendorId || "").trim();
+  if (!vendorId) return res.status(400).json({ message: "Missing vendorId" });
+  if (!/^[a-fA-F0-9]{24}$/.test(vendorId)) {
+    return res.status(400).json({ message: "Invalid vendorId" });
+  }
+
+  const vendor = await Vendor.findOne({ _id: vendorId, status: "approved" }).lean();
+  if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+
+  res.json({
+    vendor: {
+      id: vendor._id,
+      storeName: vendor.storeName,
+      storeSlug: vendor.storeSlug,
+      logoUrl: vendor.logoUrl,
+      isVerifiedBadge: vendor.isVerifiedBadge,
+    },
+  });
+}
+
+/**
  * GET /api/v1/shop/vendors/:storeSlug
  * Public vendor store details (approved vendors only)
  */
