@@ -99,6 +99,23 @@ const productSchema = new mongoose.Schema(
     // When a buyer selects a variant, the combined adjustment is the sum of all
     // selected attribute values' adjustments (empty/missing = 0).
     attributeAdjustments: { type: Object, default: {} },
+
+    // Per-combination (per-variant) flat price adjustments — the modern, accurate
+    // replacement for attributeAdjustments. The key is the joined selected values
+    // of all attributes for one variant (e.g. "Red|Medium"). The value is a single
+    // flat adjustment applied uniformly to every tier. Empty/missing = 0.
+    variantAdjustments: { type: Object, default: {} },
+
+    // Per-combination percentage price adjustments. Same key format as
+    // variantAdjustments. Value is a percentage (e.g. -20 = -20%). Combined with
+    // variantAdjustments in pricing.js: effectivePrice = max(0, tier.unitPrice *
+    // (1 + percent/100) + flatAdjustment).
+    variantPercentAdjustments: { type: Object, default: {} },
+
+    // Minimum effective unit price (in product currency). Default 0.01. Used to
+    // floor variant-adjusted tier prices so vendors cannot accidentally zero out
+    // (or make negative) every tier via a large negative adjustment.
+    minEffectiveUnitPrice: { type: Number, default: 0.01, min: 0 },
   },
   { timestamps: true }
 );
