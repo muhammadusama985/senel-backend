@@ -93,28 +93,22 @@ const productSchema = new mongoose.Schema(
     country: { type: String, default: "", index: true },
     currency: { type: String, enum: ["EUR", "TRY", "USD"], default: "EUR", index: true },
 
-    // Per-attribute-value price adjustments.
-    // Structure: { "<AttributeName>": { "<Value>": adjustmentNumber, ... }, ... }
-    // e.g. { Color: { Green: -10, Red: 0, Blue: -0.30 }, Size: { Small: -20, Medium: 0 } }
-    // When a buyer selects a variant, the combined adjustment is the sum of all
-    // selected attribute values' adjustments (empty/missing = 0).
-    attributeAdjustments: { type: Object, default: {} },
+    // The "base" combination whose tier prices are the canonical priceTiers
+    // values. Every other combination has its own offset (see below). Key
+    // format: joined selected values of all attributes (e.g. "Red|Medium").
+    // Empty string means "no base set yet".
+    baseCombination: { type: String, default: '' },
 
-    // Per-combination (per-variant) flat price adjustments — the modern, accurate
-    // replacement for attributeAdjustments. The key is the joined selected values
-    // of all attributes for one variant (e.g. "Red|Medium"). The value is a single
-    // flat adjustment applied uniformly to every tier. Empty/missing = 0.
-    variantAdjustments: { type: Object, default: {} },
-
-    // Per-combination percentage price adjustments. Same key format as
-    // variantAdjustments. Value is a percentage (e.g. -20 = -20%). Combined with
-    // variantAdjustments in pricing.js: effectivePrice = max(0, tier.unitPrice *
-    // (1 + percent/100) + flatAdjustment).
-    variantPercentAdjustments: { type: Object, default: {} },
+    // Per-combination OFFSET from the base combination. Key: "<val1>|<val2>|..."
+    // Value: number (positive = surcharge over base, negative = discount under
+    // base). Missing entry means offset = 0 (= same as base). The effective
+    // unit price for a tier is: tier.unitPrice + combinationOffsets[key].
+    // Floored at minEffectiveUnitPrice.
+    combinationOffsets: { type: Object, default: {} },
 
     // Minimum effective unit price (in product currency). Default 0.01. Used to
-    // floor variant-adjusted tier prices so vendors cannot accidentally zero out
-    // (or make negative) every tier via a large negative adjustment.
+    // floor the final (tier + offset) price so a vendor can't accidentally
+    // zero out (or make negative) every tier via a large negative offset.
     minEffectiveUnitPrice: { type: Number, default: 0.01, min: 0 },
   },
   { timestamps: true }

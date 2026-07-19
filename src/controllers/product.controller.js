@@ -49,9 +49,8 @@ const createProductSchema = z.object({
   sku: z.string().optional(),
   moq: z.number().int().min(1),
   priceTiers: z.array(priceTierInput).min(1),
-  attributeAdjustments: z.record(z.record(z.number())).optional(),
-  variantAdjustments: z.record(z.number()).optional(),
-  variantPercentAdjustments: z.record(z.number()).optional(),
+  baseCombination: z.string().optional(),
+  combinationOffsets: z.record(z.number()).optional(),
   minEffectiveUnitPrice: z.number().min(0).optional(),
   hasVariants: z.boolean().optional(),
   stockQty: z.number().int().min(0).optional(),
@@ -83,9 +82,8 @@ const adminUpdateSchema = z.object({
   sku: z.string().optional(),
   moq: z.number().int().min(1).optional(),
   priceTiers: z.array(priceTierInput).optional(),
-  attributeAdjustments: z.record(z.record(z.number())).optional(),
-  variantAdjustments: z.record(z.number()).optional(),
-  variantPercentAdjustments: z.record(z.number()).optional(),
+  baseCombination: z.string().optional(),
+  combinationOffsets: z.record(z.number()).optional(),
   minEffectiveUnitPrice: z.number().min(0).optional(),
   stockQty: z.number().int().min(0).optional(),
   imageUrls: z.array(z.string().url()).optional(),
@@ -289,63 +287,48 @@ function validateMOQAndTiers(moq, priceTiers) {
 }
 
 /**
- * Validate the new per-combination adjustment maps.
+ * Validate the per-combination offset map and the base combination key.
  *
  * Rules:
- *  - Every value must be a finite number.
- *  - Zero (0) is rejected — vendors must leave the field blank instead.
- *  - No adjustment may drive ANY tier's effective unit price below
+ *  - Every value in combinationOffsets must be a finite number. Zero is
+ *    ALLOWED (it means "same price as base"); the vendor can also leave the
+ *    field blank to express the same thing.
+ *  - No offset may drive ANY tier's effective unit price below
  *    minEffectiveUnitPrice (default 0.01). The most restrictive constraint
  *    comes from the cheapest tier, so the check uses min(tiers.unitPrice).
- *  - Percent adjustments must be in the range (-1000, 1000) as a sanity guard.
+ *  - If baseCombination is set, it must be a string.
+ *  - If combinationOffsets is set, the base combination key MUST NOT appear
+ *    in it (base combination always has implicit offset 0 — including it
+ *    with a non-zero value would silently double-apply that delta).
  */
-function validateVariantAdjustments(priceTiers, variantAdjustments, variantPercentAdjustments, minEffectiveUnitPrice = 0.01) {
+function validateCombinationOffsets(priceTiers, baseCombination, combinationOffsets, minEffectiveUnitPrice = 0.01) {
   const floor = Math.max(0, Number(minEffectiveUnitPrice) || 0);
   const cheapestUnitPrice = Math.min(
     ...((priceTiers || []).map((t) => Number(t?.unitPrice)).filter(Number.isFinite))
   );
   if (!Number.isFinite(cheapestUnitPrice)) return;
 
-  const maxAllowedFlat = cheapestUnitPrice - floor;
+  const minOffset = floor - cheapestUnitPrice; // most-negative offset allowed
 
-  if (variantAdjustments && typeof variantAdjustments === 'object') {
-    for (const [key, raw] of Object.entries(variantAdjustments)) {
+  if (combinationOffsets && typeof combinationOffsets === 'object') {
+    for (const [key, raw] of Object.entries(combinationOffsets)) {
       const num = Number(raw);
       if (!Number.isFinite(num)) {
-        const err = new Error(`Variant adjustment for "${key}" is not a valid number`);
+        const err = new Error(`Combination offset for "${key}" is not a valid number`);
         err.statusCode = 400;
         throw err;
       }
-      if (num === 0) {
-        const err = new Error(`Variant adjustment for "${key}" cannot be zero — leave it blank instead`);
-        err.statusCode = 400;
-        throw err;
-      }
-      if (num < maxAllowedFlat) {
+      if (num < minOffset) {
         const err = new Error(
-          `Variant adjustment for "${key}" (${num}) would zero out the cheapest tier (${cheapestUnitPrice}). Minimum allowed is ${maxAllowedFlat.toFixed(2)}.`
+          `Combination offset for "${key}" (${num}) would drop the cheapest tier (${cheapestUnitPrice}) below the floor (${floor}). Minimum allowed is ${minOffset.toFixed(2)}.`
         );
         err.statusCode = 400;
         throw err;
       }
-    }
-  }
-
-  if (variantPercentAdjustments && typeof variantPercentAdjustments === 'object') {
-    for (const [key, raw] of Object.entries(variantPercentAdjustments)) {
-      const num = Number(raw);
-      if (!Number.isFinite(num)) {
-        const err = new Error(`Variant percent adjustment for "${key}" is not a valid number`);
-        err.statusCode = 400;
-        throw err;
-      }
-      if (num === 0) {
-        const err = new Error(`Variant percent adjustment for "${key}" cannot be zero — leave it blank instead`);
-        err.statusCode = 400;
-        throw err;
-      }
-      if (Math.abs(num) > 1000) {
-        const err = new Error(`Variant percent adjustment for "${key}" (${num}) is out of range (-1000, 1000)`);
+      if (key && baseCombination && key === baseCombination) {
+        const err = new Error(
+          `The base combination "${baseCombination}" must not appear in combinationOffsets (its offset is implicitly 0).`
+        );
         err.statusCode = 400;
         throw err;
       }
@@ -431,17 +414,17 @@ async function vendorCreateProduct(req, res) {
   const normalizedTiers = validateMOQAndTiers(body.moq, body.priceTiers);
   const inventory = normalizeInventoryPayload(body);
   const normalizedVariants = inventory.hasVariants ? normalizeVariants(inventory.variants, localizedFields.title) : [];
-  validateVariantAdjustments(
+  validateCombinationOffsets(
     normalizedTiers,
-    body.variantAdjustments,
-    body.variantPercentAdjustments,
+    body.combinationOffsets,
+    body.combinationOffsets,
     body.minEffectiveUnitPrice ?? 0.01
   );
   const sku = resolveProductSku(body, null, localizedFields.title);
-  validateVariantAdjustments(
+  validateCombinationOffsets(
     normalizedTiers,
-    body.variantAdjustments,
-    body.variantPercentAdjustments,
+    body.combinationOffsets,
+    body.combinationOffsets,
     body.minEffectiveUnitPrice ?? 0.01
   );
 
@@ -472,9 +455,8 @@ async function vendorCreateProduct(req, res) {
     lengthCm: body.lengthCm ?? 0,
     widthCm: body.widthCm ?? 0,
     heightCm: body.heightCm ?? 0,
-    attributeAdjustments: body.attributeAdjustments ?? {},
-    variantAdjustments: body.variantAdjustments ?? {},
-    variantPercentAdjustments: body.variantPercentAdjustments ?? {},
+    baseCombination: body.baseCombination ?? '',
+    combinationOffsets: body.combinationOffsets ?? {},
     minEffectiveUnitPrice: body.minEffectiveUnitPrice ?? 0.01,
     source: "vendor",
     isPlatformProduct: false,
@@ -576,15 +558,15 @@ async function vendorUpdateMyProduct(req, res) {
     product.priceTiers = validateMOQAndTiers(moq, priceTiers);
   }
   if (
-    body.variantAdjustments !== undefined ||
-    body.variantPercentAdjustments !== undefined ||
+    body.combinationOffsets !== undefined ||
+    body.baseCombination !== undefined ||
     body.priceTiers !== undefined ||
     body.minEffectiveUnitPrice !== undefined
   ) {
-    validateVariantAdjustments(
+    validateCombinationOffsets(
       product.priceTiers,
-      body.variantAdjustments ?? product.variantAdjustments,
-      body.variantPercentAdjustments ?? product.variantPercentAdjustments,
+      body.baseCombination ?? product.baseCombination,
+      body.combinationOffsets ?? product.combinationOffsets,
       body.minEffectiveUnitPrice ?? product.minEffectiveUnitPrice ?? 0.01
     );
   }
@@ -606,9 +588,8 @@ async function vendorUpdateMyProduct(req, res) {
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
-  if (body.attributeAdjustments !== undefined) product.attributeAdjustments = body.attributeAdjustments;
-  if (body.variantAdjustments !== undefined) product.variantAdjustments = body.variantAdjustments;
-  if (body.variantPercentAdjustments !== undefined) product.variantPercentAdjustments = body.variantPercentAdjustments;
+  if (body.baseCombination !== undefined) product.baseCombination = body.baseCombination;
+  if (body.combinationOffsets !== undefined) product.combinationOffsets = body.combinationOffsets;
   if (body.minEffectiveUnitPrice !== undefined) product.minEffectiveUnitPrice = body.minEffectiveUnitPrice;
   if (body.trackInventory !== undefined) product.trackInventory = body.trackInventory;
   if (body.lowStockThreshold !== undefined) product.lowStockThreshold = body.lowStockThreshold;
@@ -776,9 +757,8 @@ async function adminCreateProduct(req, res) {
     lengthCm: body.lengthCm ?? 0,
     widthCm: body.widthCm ?? 0,
     heightCm: body.heightCm ?? 0,
-    attributeAdjustments: body.attributeAdjustments ?? {},
-    variantAdjustments: body.variantAdjustments ?? {},
-    variantPercentAdjustments: body.variantPercentAdjustments ?? {},
+    baseCombination: body.baseCombination ?? '',
+    combinationOffsets: body.combinationOffsets ?? {},
     minEffectiveUnitPrice: body.minEffectiveUnitPrice ?? 0.01,
     createdByAdminId: req.user._id,
     source,
@@ -920,15 +900,15 @@ async function adminUpdateProduct(req, res) {
     product.priceTiers = validateMOQAndTiers(moq, priceTiers);
   }
   if (
-    body.variantAdjustments !== undefined ||
-    body.variantPercentAdjustments !== undefined ||
+    body.combinationOffsets !== undefined ||
+    body.baseCombination !== undefined ||
     body.priceTiers !== undefined ||
     body.minEffectiveUnitPrice !== undefined
   ) {
-    validateVariantAdjustments(
+    validateCombinationOffsets(
       product.priceTiers,
-      body.variantAdjustments ?? product.variantAdjustments,
-      body.variantPercentAdjustments ?? product.variantPercentAdjustments,
+      body.baseCombination ?? product.baseCombination,
+      body.combinationOffsets ?? product.combinationOffsets,
       body.minEffectiveUnitPrice ?? product.minEffectiveUnitPrice ?? 0.01
     );
   }
@@ -950,7 +930,7 @@ async function adminUpdateProduct(req, res) {
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
-  if (body.attributeAdjustments !== undefined) product.attributeAdjustments = body.attributeAdjustments;
+
   if (body.trackInventory !== undefined) product.trackInventory = body.trackInventory;
   if (body.lowStockThreshold !== undefined) product.lowStockThreshold = body.lowStockThreshold;
   if (body.requiresManualShipping !== undefined) product.requiresManualShipping = body.requiresManualShipping;
