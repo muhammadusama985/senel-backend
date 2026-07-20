@@ -50,9 +50,11 @@ async function reorder(req, res) {
       continue;
     }
 
-    const availableStock = p.hasVariants
-      ? ((p.variants || []).some((variant) => variant.sku === variantSku) ? Number(p.stockQty || 0) : 0)
-      : Number(p.stockQty || 0);
+    const availableStock = (() => {
+      if (!p.hasVariants) return Number(p.stockQty || 0);
+      const variant = (p.variants || []).find((v) => v.sku === variantSku);
+      return variant ? Number(variant.stockQty || 0) : 0;
+    })();
     if (availableStock <= 0) {
       unavailableItems.push({ productId: oi.productId, reason: "Out of stock" });
       continue;

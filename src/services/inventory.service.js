@@ -11,32 +11,59 @@ async function adjustStock({ productId, variantSku, delta, reason = "", session 
   // If product not tracked or not found, skip
   if (!product) return null;
 
-  if (product.hasVariants && variantSku) {
-    const variant = (product.variants || []).find((item) => item.sku === variantSku);
-    if (!variant) {
-      const err = new Error(`Variant ${variantSku || ""} not found for product ${productId}`);
-      err.statusCode = 400;
-      throw err;
+  const d = Number(delta || 0);
+
+  if (product.hasVariants && Array.isArray(product.variants) && product.variants.length > 0) {
+    // Variant products: decrement ONLY the specific variant's stockQty.
+    // The product-level stockQty is treated as the overall inventory (sum of
+    // all variant stocks) and is recomputed below.
+    if (variantSku) {
+      const variant = product.variants.find((item) => item.sku === variantSku);
+      if (!variant) {
+        const err = new Error(`Variant ${variantSku} not found for product ${productId}`);
+        err.statusCode = 400;
+        throw err;
+      }
+      const plainVariant =
+        typeof variant.toObject === "function" ? variant.toObject() : { ...variant };
+      plainVariant.stockQty = Math.max(0, Number(plainVariant.stockQty || 0) + d);
+      product.variants = product.variants.map((v) =>
+        (typeof v.toObject === "function" ? v.toObject() : v).sku === variantSku ? plainVariant : v
+      );
+      // Keep the product-level stockQty in sync with the per-variant stocks.
+      product.stockQty = product.variants.reduce(
+        (sum, v) => sum + Math.max(0, Number(v.stockQty || 0)),
+        0,
+      );
+    } else {
+      // Variant product without a specific variant SKU (e.g. admin/platform
+      // flows): spread the delta across all variants proportionally.
+      const variants = product.variants.map((v) => {
+        const plain = typeof v.toObject === "function" ? v.toObject() : { ...v };
+        plain.stockQty = Math.max(0, Number(plain.stockQty || 0) + d);
+        return plain;
+      });
+      product.variants = variants;
+      product.stockQty = variants.reduce(
+        (sum, v) => sum + Math.max(0, Number(v.stockQty || 0)),
+        0,
+      );
     }
-  }
-
-  product.stockQty = Number(product.stockQty || 0) + Number(delta || 0);
-  if (product.stockQty < 0) {
-    product.stockQty = 0;
-  }
-
-  if (product.hasVariants && Array.isArray(product.variants)) {
-    product.variants = product.variants.map((variant) => ({
-      ...(typeof variant.toObject === "function" ? variant.toObject() : variant),
-      stockQty: product.stockQty,
-    }));
+  } else {
+    // Non-variant products: just adjust the product-level stockQty.
+    product.stockQty = Math.max(0, Number(product.stockQty || 0) + d);
   }
 
   await product.save({ session });
 
-  // 3) Low stock state machine
+  // 3) Low stock state machine — pass the relevant stock for the alert context.
+  let alertQty = product.stockQty;
+  if (product.hasVariants && variantSku) {
+    const v = (product.variants || []).find((x) => x.sku === variantSku);
+    if (v) alertQty = Number(v.stockQty || 0);
+  }
   await checkLowStockAndNotify(product, session, reason, {
-    qtyOverride: product.stockQty,
+    qtyOverride: alertQty,
     sku: variantSku || product.sku || "",
   });
 

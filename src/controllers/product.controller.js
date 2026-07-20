@@ -446,7 +446,6 @@ async function vendorCreateProduct(req, res) {
     stockQty: inventory.stockQty,
     variants: normalizedVariants.map((variant) => ({
       ...variant,
-      stockQty: inventory.stockQty,
     })),
     imageUrls: body.imageUrls ?? [],
     trackInventory: body.trackInventory ?? true,
@@ -580,11 +579,8 @@ async function vendorUpdateMyProduct(req, res) {
     product.hasVariants = inventory.hasVariants;
     product.stockQty = inventory.stockQty;
     product.variants = inventory.hasVariants
-      ? normalizeVariants(inventory.variants, product.title).map((variant) => ({
-          ...variant,
-          stockQty: inventory.stockQty,
-        }))
-      : [];
+          ? normalizeVariants(inventory.variants, product.title)
+          : [];
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;
@@ -657,10 +653,7 @@ async function vendorSubmitProduct(req, res) {
   }
   if (product.hasVariants) {
     try {
-      product.variants = normalizeVariants(product.variants, product.title).map((variant) => ({
-        ...variant,
-        stockQty: product.stockQty,
-      }));
+      product.variants = normalizeVariants(product.variants, product.title);
     } catch (error) {
       return res.status(error.statusCode || 400).json({ message: error.message });
     }
@@ -748,7 +741,6 @@ async function adminCreateProduct(req, res) {
     stockQty: inventory.stockQty,
     variants: normalizedVariants.map((variant) => ({
       ...variant,
-      stockQty: inventory.stockQty,
     })),
     imageUrls: body.imageUrls ?? [],
     trackInventory: body.trackInventory ?? true,
@@ -922,11 +914,8 @@ async function adminUpdateProduct(req, res) {
     product.hasVariants = inventory.hasVariants;
     product.stockQty = inventory.stockQty;
     product.variants = inventory.hasVariants
-      ? normalizeVariants(inventory.variants, product.title).map((variant) => ({
-          ...variant,
-          stockQty: inventory.stockQty,
-        }))
-      : [];
+          ? normalizeVariants(inventory.variants, product.title)
+          : [];
   }
 
   if (body.imageUrls !== undefined) product.imageUrls = body.imageUrls;

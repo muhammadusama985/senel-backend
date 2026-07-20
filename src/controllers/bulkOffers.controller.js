@@ -680,10 +680,25 @@ async function checkoutFromOffer(req, res) {
     coupon: { code: "", couponId: null, scope: "", vendorId: null, discountType: "", value: 0 },
   });
 
-  // Decrement stock
+  // Decrement stock for the negotiated variant (if any). The offer persists
+  // variantSku / variantAttributes when the negotiation specifies a variant.
+  const offerVariantSku = product.hasVariants
+    ? (offer.variantSku
+        || ((product.variants || []).find((v) =>
+            Object.entries(offer.variantAttributes || {}).every(
+              ([k, val]) => String(v.attributes?.[k] || "") === String(val)
+            )
+          )?.sku
+          || ""))
+    : "";
+  if (product.hasVariants && !offerVariantSku) {
+    return res.status(400).json({
+      message: "This bulk offer is missing a variant selection; please resolve with the vendor before checkout.",
+    });
+  }
   await adjustStock({
     productId: product._id,
-    variantSku: product.hasVariants ? "" : undefined,
+    variantSku: product.hasVariants ? offerVariantSku : undefined,
     delta: -Math.abs(qty),
     reason: "OFFER_ACCEPTED",
   });

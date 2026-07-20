@@ -68,9 +68,9 @@ function computePricingSnapshot(product, qty, selectedAttributes, _legacyAttribu
 }
 
 function getAvailableStock(product, variantSku) {
-  if (!product.hasVariants) return product.stockQty;
+  if (!product.hasVariants) return Number(product.stockQty || 0);
   const v = (product.variants || []).find((x) => x.sku === variantSku);
-  return v ? (product.stockQty ?? 0) : 0;
+  return v ? Number(v.stockQty || 0) : 0;
 }
 
 function getVariantAttributes(product, variantSku) {

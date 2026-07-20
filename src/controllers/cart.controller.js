@@ -83,12 +83,13 @@ function assertQtyMeetsMOQ(product, qty) {
 }
 
 function getAvailableStock(product, variantSku) {
-  if (!product.hasVariants) return product.stockQty;
+  if (!product.hasVariants) return Number(product.stockQty || 0);
 
+  // Variant products: stock lives on each variant.
   if (!variantSku) return 0;
   const variant = (product.variants || []).find((v) => v.sku === variantSku);
   if (!variant) return 0;
-  return product.stockQty ?? 0;
+  return Number(variant.stockQty || 0);
 }
 
 function getVariantAttributes(product, variantSku) {
