@@ -136,8 +136,22 @@ function isAdminFulfillmentProduct(product) {
   return product?.isPlatformProduct === true || product?.source === "admin_platform";
 }
 
-function computePricingSnapshot(product, qty, selectedAttributes, attributeAdjustments) {
-  const tier = getTierPrice(product.priceTiers, qty, selectedAttributes, attributeAdjustments);
+function computePricingSnapshot(product, qty, selectedAttributes, _legacyAttributeAdjustments) {
+  // Use the new per-combination model: the selected combination has a single
+  // offset relative to the base combination. Selected attributes' keys are
+  // sorted alphabetically so the key matches the client's lookup exactly.
+  const attributeTitles = Object.keys(selectedAttributes || {}).sort();
+  const tier = getTierPrice(
+    product.priceTiers,
+    qty,
+    {
+      ...product.toObject ? product.toObject() : product,
+      combinationOffsets: product.combinationOffsets,
+      baseCombination: product.baseCombination,
+    },
+    selectedAttributes,
+    attributeTitles
+  );
   if (!tier) {
     const err = new Error("Product price tiers not configured");
     err.statusCode = 400;
@@ -162,7 +176,9 @@ async function serializeCart(cartDoc) {
 
   const productIds = [...new Set(items.map((item) => String(item.productId)).filter(Boolean))];
   const products = await Product.find({ _id: { $in: productIds } })
-    .select("_id status stockQty hasVariants variants")
+    .select(
+      "_id status stockQty hasVariants variants priceTiers baseCombination combinationOffsets minEffectiveUnitPrice"
+    )
     .lean();
   const productMap = new Map(products.map((product) => [String(product._id), product]));
 
@@ -172,6 +188,16 @@ async function serializeCart(cartDoc) {
 
     return {
       ...item,
+      // Snapshot the product's pricing config on the cart line so the client
+      // can recompute unit price on qty changes (logged-in path). Without
+      // these, the client's recomputeUnitPrice falls back to the last-known
+      // unitPrice and quantity-tier + combination-offset changes stop applying.
+      priceTiers: product ? product.priceTiers : undefined,
+      baseCombination: product ? product.baseCombination : undefined,
+      combinationOffsets: product ? product.combinationOffsets : undefined,
+      minEffectiveUnitPrice: product
+        ? Number(product.minEffectiveUnitPrice) || 0
+        : undefined,
       availableStock,
       isAvailable: Boolean(product && product.status === "approved"),
     };
