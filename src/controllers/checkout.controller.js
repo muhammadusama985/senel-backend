@@ -35,8 +35,24 @@ function nowOrderNumber() {
   return `SE-${ts}-${rand}`;
 }
 
-function computePricingSnapshot(product, qty, selectedAttributes, attributeAdjustments) {
-  const tier = getTierPrice(product.priceTiers, qty, selectedAttributes, attributeAdjustments);
+function computePricingSnapshot(product, qty, selectedAttributes, _legacyAttributeAdjustments) {
+  // Mirror cart.controller.js: sort attribute titles so the per-combination
+  // key matches the vendor / frontend lookup exactly, and pass the full
+  // product doc to getTierPrice so combinationOffsets / baseCombination /
+  // minEffectiveUnitPrice are honored at checkout.
+  const attributeTitles = Object.keys(selectedAttributes || {}).sort();
+  const tier = getTierPrice(
+    product.priceTiers,
+    qty,
+    {
+      ...(product.toObject ? product.toObject() : product),
+      combinationOffsets: product.combinationOffsets,
+      baseCombination: product.baseCombination,
+      minEffectiveUnitPrice: product.minEffectiveUnitPrice,
+    },
+    selectedAttributes,
+    attributeTitles
+  );
   if (!tier) {
     const err = new Error("Product price tiers not configured");
     err.statusCode = 400;
@@ -45,6 +61,7 @@ function computePricingSnapshot(product, qty, selectedAttributes, attributeAdjus
   const unitPrice = Number(tier.unitPrice);
   return {
     unitPrice,
+    currency: product.currency || "EUR",
     tierMinQtyApplied: tier.minQty,
     lineTotal: Number((unitPrice * qty).toFixed(2)),
   };

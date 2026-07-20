@@ -65,7 +65,22 @@ async function reorder(req, res) {
     }
 
     const selectedAttrs = oi.variantAttributes || {};
-    const tier = getTierPrice(p.priceTiers, qty, selectedAttrs, p.attributeAdjustments);
+    const attributeTitles = Object.keys(selectedAttrs || {}).sort();
+    // Pass the product doc (so combinationOffsets / minEffectiveUnitPrice
+    // are honored) plus the sorted attribute titles — matches the canonical
+    // getTierPrice signature used by cart.controller.js and checkout.controller.js.
+    const tier = getTierPrice(
+      p.priceTiers,
+      qty,
+      {
+        ...(p.toObject ? p.toObject() : p),
+        combinationOffsets: p.combinationOffsets,
+        baseCombination: p.baseCombination,
+        minEffectiveUnitPrice: p.minEffectiveUnitPrice,
+      },
+      selectedAttrs,
+      attributeTitles
+    );
     if (!tier) {
       unavailableItems.push({ productId: oi.productId, reason: "Pricing is unavailable" });
       continue;
@@ -77,7 +92,18 @@ async function reorder(req, res) {
 
     if (existing) {
       existing.qty += qty;
-      const updatedTier = getTierPrice(p.priceTiers, existing.qty, selectedAttrs, p.attributeAdjustments);
+      const updatedTier = getTierPrice(
+        p.priceTiers,
+        existing.qty,
+        {
+          ...(p.toObject ? p.toObject() : p),
+          combinationOffsets: p.combinationOffsets,
+          baseCombination: p.baseCombination,
+          minEffectiveUnitPrice: p.minEffectiveUnitPrice,
+        },
+        selectedAttrs,
+        attributeTitles
+      );
       existing.unitPrice = Number(updatedTier?.unitPrice || tier.unitPrice);
       existing.currency = p.currency || "EUR";
       existing.tierMinQtyApplied = Number(updatedTier?.minQty || tier.minQty);
