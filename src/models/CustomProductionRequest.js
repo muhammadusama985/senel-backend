@@ -160,7 +160,7 @@ const customProductionRequestSchema = new mongoose.Schema(
 
     // Once buyer accepts the quote, a payment link is generated
     paymentLink: {
-      token: { type: String, default: "", index: true, unique: true, sparse: true },
+      token: { type: String, default: null, index: true, unique: true, sparse: true },
       generatedAt: { type: Date, default: null },
       expiresAt: { type: Date, default: null },
       usedAt: { type: Date, default: null },

@@ -159,8 +159,10 @@ async function createRFQ(req, res) {
         createdAt: new Date(),
       },
     ],
-    // Explicitly clear paymentLink fields so they don't carry over from any defaults
-    paymentLink: { token: "", generatedAt: null, expiresAt: null, usedAt: null, orderId: null },
+    // Explicitly clear paymentLink fields so they don't carry over from any defaults.
+    // token must be `null` (not `""`) so the unique-sparse index on paymentLink.token
+    // correctly skips this row — `""` is a present string and would collide on the second insert.
+    paymentLink: { token: null, generatedAt: null, expiresAt: null, usedAt: null, orderId: null },
   });
 
   try {
