@@ -820,6 +820,21 @@ async function adminGetOffer(req, res) {
   res.json({ offer });
 }
 
+/**
+ * Admin hard-delete: removes the offer from the database regardless of
+ * its current status (admin has full power, unlike the vendor who can
+ * only delete terminal-state offers). After deletion the offer
+ * disappears from the vendor's and the buyer's negotiation lists too,
+ * because both sides query the same BulkOffer collection.
+ */
+async function adminDeleteOffer(req, res) {
+  const offer = await BulkOffer.findById(req.params.offerId);
+  if (!offer) return res.status(404).json({ message: "Offer not found" });
+
+  await BulkOffer.deleteOne({ _id: offer._id });
+  res.json({ ok: true, message: "Offer deleted", offerId: offer._id });
+}
+
 module.exports = {
   // buyer
   createBulkOffer,
@@ -842,6 +857,7 @@ module.exports = {
   // admin
   adminListAllOffers,
   adminGetOffer,
+  adminDeleteOffer,
   // helpers (used by expiration service)
   notifyCounterpartyOnOffer,
 };

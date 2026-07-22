@@ -777,6 +777,21 @@ async function adminGetRFQ(req, res) {
   res.json({ rfq });
 }
 
+/**
+ * Admin hard-delete: removes the RFQ from the database regardless of its
+ * current status (admin has full power, unlike the vendor who can only
+ * delete terminal-state RFQs). After deletion the RFQ disappears from the
+ * vendor's and the buyer's lists too, because both sides query the same
+ * CustomProductionRequest collection.
+ */
+async function adminDeleteRFQ(req, res) {
+  const rfq = await CustomProductionRequest.findById(req.params.rfqId);
+  if (!rfq) return res.status(404).json({ message: "RFQ not found" });
+
+  await CustomProductionRequest.deleteOne({ _id: rfq._id });
+  res.json({ ok: true, message: "RFQ deleted", rfqId: rfq._id });
+}
+
 module.exports = {
   // buyer
   createRFQ,
@@ -801,6 +816,7 @@ module.exports = {
   // admin
   adminListAllRFQs,
   adminGetRFQ,
+  adminDeleteRFQ,
   // helpers
   notifyRFQ,
 };

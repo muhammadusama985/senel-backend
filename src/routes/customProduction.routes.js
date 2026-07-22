@@ -35,5 +35,6 @@ router.delete("/vendor/:rfqId", asyncHandler(c.vendorDeleteRFQ));
 router.use("/admin", requireAuth, requireRole("admin"));
 router.get("/admin", asyncHandler(c.adminListAllRFQs));
 router.get("/admin/:rfqId", asyncHandler(c.adminGetRFQ));
+router.delete("/admin/:rfqId", asyncHandler(c.adminDeleteRFQ));
 
 module.exports = router;

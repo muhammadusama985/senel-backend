@@ -33,5 +33,6 @@ router.delete("/vendor/:offerId", asyncHandler(c.vendorDeleteOffer));
 router.use("/admin", requireAuth, requireRole("admin"));
 router.get("/admin", asyncHandler(c.adminListAllOffers));
 router.get("/admin/:offerId", asyncHandler(c.adminGetOffer));
+router.delete("/admin/:offerId", asyncHandler(c.adminDeleteOffer));
 
 module.exports = router;
